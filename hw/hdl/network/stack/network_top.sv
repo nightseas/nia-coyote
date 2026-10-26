@@ -106,6 +106,12 @@ module network_top #(
     metaIntf.s                  s_filter_config,
 `endif
 
+`ifdef EN_HOST_NETWORKING
+    // Stream interfaces for arbitrary packets from host networking
+    AXI4S.s                     s_axis_host_tx,
+    AXI4S.m                     m_axis_host_rx,
+`endif
+
     // Clocks
     input  wire                 aclk,
     input  wire                 aresetn,
@@ -125,22 +131,64 @@ logic r_clk;
 logic n_resetn;
 logic n_clk;
 
-if(CROSS_EARLY == 1) begin
-    assign n_clk = nclk;
-    assign n_resetn = nresetn;
-end
-else begin
-    assign n_clk = r_clk;
-    assign n_resetn = r_resetn;
-end
+`ifdef NET_DCMAC
+    // NOTE: No early cross for DCMAC, since the clock crossing
+    // is implemented in the block diagram
+    if(CROSS_LATE == 1) begin
+        assign n_clk = nclk;
+        assign n_resetn = nresetn;
+    end
+    else begin
+        assign n_clk = aclk;
+        assign n_resetn = aresetn;
+    end
+`else
+    if(CROSS_EARLY == 1) begin
+        assign n_clk = nclk;
+        assign n_resetn = nresetn;
+    end
+    else begin
+        assign n_clk = r_clk;
+        assign n_resetn = r_resetn;
+    end
+`endif
 
 /**
  * Network module
  */
+
+// n_clk AXI streams to connect from the network module to the rest of the stack
+AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_n_clk_rx_data (.aclk(n_clk), .aresetn(n_resetn));
+AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_n_clk_tx_data (.aclk(n_clk), .aresetn(n_resetn));
+
+
+`ifdef NET_DCMAC
+
+network_module_dcmac inst_network_module (
+    // Clock, reset
+    .aclk(n_clk),
+    .aresetn(n_resetn),
+
+    // GT
+    .gt_refclk_p(gt_refclk_p),
+    .gt_refclk_n(gt_refclk_n),
+
+    .gt_rxp_in(gt_rxp_in),
+    .gt_rxn_in(gt_rxn_in),
+    .gt_txp_out(gt_txp_out),
+    .gt_txn_out(gt_txn_out),
+
+    // Network streams
+    .m_axis_net_rx(axis_n_clk_rx_data),
+    .s_axis_net_tx(axis_n_clk_tx_data)
+); 
+
+`else 
+
 AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_r_clk_rx_data (.aclk(r_clk), .aresetn(r_resetn));
 AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_r_clk_tx_data (.aclk(r_clk), .aresetn(r_resetn));
 
-network_module #(
+network_module_cmac #(
     .N_STGS(N_REG_NET_S2)
 ) inst_network_module (
     .init_clk (init_clk),
@@ -164,8 +212,6 @@ network_module #(
 /**
  * Cross early
  */
-AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_n_clk_rx_data (.aclk(n_clk), .aresetn(n_resetn));
-AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_n_clk_tx_data (.aclk(n_clk), .aresetn(n_resetn));
 
 network_ccross_early #(
     .ENABLED(CROSS_EARLY),
@@ -180,6 +226,8 @@ network_ccross_early #(
     .s_axis_nclk(axis_n_clk_tx_data),
     .m_axis_nclk(axis_n_clk_rx_data)
 ); 
+
+`endif
 
 /**
  * Network stack
@@ -218,6 +266,12 @@ metaIntf #(.STYPE(req_t)) rdma_wr_req_aclk (.*);
 AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_rdma_rd_req_aclk (.*);
 AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_rdma_rd_rsp_aclk (.*);
 AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_rdma_wr_aclk (.*);
+
+// Host Networking 
+AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_host_tx_n_clk();
+AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_host_rx_n_clk();
+AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_host_tx_aclk();
+AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_host_rx_aclk();
 
 // RDMA memory
 metaIntf #(.STYPE(logic[MEM_CMD_BITS-1:0])) rdma_mem_rd_cmd_n_clk (.aclk(n_clk), .aresetn(n_resetn));
@@ -338,6 +392,12 @@ network_stack inst_network_stack (
     .m_axis_tcp_mem_wr(axis_tcp_mem_wr_n_clk),
 `endif
 
+`ifdef EN_HOST_NETWORKING
+    // Input / Output streams for arbitrary packets from host networking 
+    .s_axis_host_tx(axis_host_tx_n_clk), 
+    .m_axis_host_rx(axis_host_rx_n_clk), 
+`endif
+
 `ifdef EN_SNIFFER
     .m_rx_sniffer(m_rx_sniffer),
     .m_tx_sniffer(m_tx_sniffer),
@@ -399,6 +459,43 @@ network_slice_array #(
     .aclk(aclk),
     .aresetn(aresetn)
 );
+
+/**
+ * HOST NETWORKING
+ */
+`ifdef EN_HOST_NETWORKING
+
+    // Host network late cross 
+    host_networking_ccross_net_late #(
+        .ENABLED(CROSS_LATE)
+    ) inst_host_networking_clk_cross_late (
+        .s_axis_host_tx_aclk(axis_host_tx_aclk), 
+        .m_axis_host_rx_aclk(axis_host_rx_aclk), 
+        .m_axis_host_tx_nclk(axis_host_tx_n_clk),
+        .s_axis_host_rx_nclk(axis_host_rx_n_clk), 
+        .aclk(aclk),
+        .aresetn(aresetn),
+        .nclk(n_clk),
+        .nresetn(n_resetn)
+    ); 
+
+    // Host network slicing 
+    host_networking_slice_array_net #(
+        .N_STAGES(N_REG_NET_S0)
+    ) inst_host_networking_slice_array (
+        // Network
+        .m_axis_host_tx_n(axis_host_tx_aclk),
+        .s_axis_host_rx_n(axis_host_rx_aclk),
+
+        // User
+        .s_axis_host_tx_u(s_axis_host_tx),
+        .m_axis_host_rx_u(m_axis_host_rx),
+
+        .aclk(aclk),
+        .aresetn(aresetn)
+    );
+
+`endif
 
 /**
  * RDMA
@@ -485,7 +582,11 @@ network_slice_array #(
 
     // RDMA memory
     net_mem_intf #(
+    `ifdef NET_DCMAC
+        .ENABLE(0),
+    `else
         .ENABLE(1),
+    `endif
         .UNALIGNED(1)
     ) inst_rdma_mem_intf_0 (
         .aclk(aclk),

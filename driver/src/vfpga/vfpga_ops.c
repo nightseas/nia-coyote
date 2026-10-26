@@ -22,7 +22,7 @@
 #include "vfpga_ops.h"
 
 // Hash map holding the mapping between host process ID (hpid) and Coyote thread IDs (ctid) for each vFPGA device 
-struct hlist_head hpid_ctid_map[MAX_N_REGIONS][1 << (PID_HASH_TABLE_ORDER)];
+struct hlist_head hpid_ctid_map[MAX_FPGA_DEVICES][MAX_N_REGIONS][1 << (PID_HASH_TABLE_ORDER)];
 
 #ifdef HMM_KERNEL
     static struct mmu_interval_notifier_ops cyt_not_ops = {
@@ -55,7 +55,7 @@ int vfpga_dev_release(struct inode *inode, struct file *file) {
 
     // Traverse all Coyote threads for this vFPGA device and free their resources
     if(--device->ref_cnt == 0) {
-        hash_for_each(hpid_ctid_map[device->id], bkt, tmp_h_entry, entry) {
+        hash_for_each(hpid_ctid_map[device->bd_data->dev_id][device->id], bkt, tmp_h_entry, entry) {
             list_for_each_safe(l_p, l_n, &tmp_h_entry->ctid_list) {
                 // entry
                 struct ctid_entry *l_entry = list_entry(l_p, struct ctid_entry, list);
@@ -97,22 +97,14 @@ int vfpga_dev_release(struct inode *inode, struct file *file) {
     return 0;
 }
 
-long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg) {
-    int ret_val = 0;
-        
-    #ifdef HMM_KERNEL    
-        struct task_struct *task;
-        struct mm_struct *mm;
-    #endif
-
-    // Parse device and device attributes
-    struct vfpga_dev *device = (struct vfpga_dev *) file->private_data;
-    BUG_ON(!device);
-    struct bus_driver_data *device_data = device->bd_data;
-    BUG_ON(!device_data);
-
+long vfpga_dev_ioctl_impl(struct vfpga_dev *device, unsigned int command, unsigned long arg, bool from_kernel) {
     // Array of arguments passed from/back to user-space; number of arguments depends on IOCTL call
     uint64_t tmp[MAX_USER_ARGS];
+    int ret_val = 0;
+
+    // Get the bus driver data for some of the ioctl calls 
+    struct bus_driver_data *device_data = device->bd_data;
+    BUG_ON(!device_data);
 
     switch (command) {
 
@@ -123,7 +115,13 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Args: host process ID (hpid)
         // Return: Coyote thread ID (ctid)
         case IOCTL_REGISTER_CTID:
-            ret_val = copy_from_user(&tmp, (unsigned long *)arg, sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, sizeof(unsigned long));
+                ret_val = 0;
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *)arg, sizeof(unsigned long));
+            }
+            
             if (ret_val != 0) {
                 pr_warn("user data could not be coppied, return %d\n", ret_val);
             } else {
@@ -148,7 +146,7 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
                 struct hpid_ctid_pages *tmp_h_entry, *new_h_entry;
                 struct ctid_entry *l_entry;
                             
-                hash_for_each_possible(hpid_ctid_map[device->id], tmp_h_entry, entry, hpid) {
+                hash_for_each_possible(hpid_ctid_map[device->bd_data->dev_id][device->id], tmp_h_entry, entry, hpid) {
                     if (tmp_h_entry->hpid == hpid) {
                         hpid_found = true;
                     }
@@ -173,11 +171,11 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
                             } 
                         }
                     #endif
-                    hash_add(hpid_ctid_map[device->id], &new_h_entry->entry, hpid);
+                    hash_add(hpid_ctid_map[device->bd_data->dev_id][device->id], &new_h_entry->entry, hpid);
                 }
 
                 // Add ctid to the tail of the ctid list for this hpid
-                hash_for_each_possible(hpid_ctid_map[device->id], tmp_h_entry, entry, hpid) {
+                hash_for_each_possible(hpid_ctid_map[device->bd_data->dev_id][device->id], tmp_h_entry, entry, hpid) {
                     if (tmp_h_entry->hpid == hpid) {
                         l_entry = kmalloc(sizeof(struct ctid_entry), GFP_KERNEL);
                         BUG_ON(!l_entry);
@@ -187,7 +185,7 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
                 }
 
                 #ifdef HMM_KERNEL
-                    INIT_LIST_HEAD(&migrated_pages[device->id][ctid]);
+                    INIT_LIST_HEAD(&migrated_pages[device->bd_data->dev_id][device->id][ctid]);
                 #endif            
 
                 dbg_info("registration succeeded, ctid %d, hpid %d, spid %d\n", ctid, hpid, spid);
@@ -203,7 +201,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // In essence, performing the opposite of the IOCTL_REGISTER_CTID call
         // Args: Coyote thread ID (ctid)
         case IOCTL_UNREGISTER_CTID:
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, sizeof(unsigned long));
+                ret_val = 0;
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+            }
             if (ret_val != 0) {
                 pr_warn("user data could not be coppied, return %d\n", ret_val);
             } else {
@@ -218,7 +221,7 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
                 struct ctid_entry *l_entry;
 
                 // Traverse all Coyote thread IDs until a match is found
-                hash_for_each_possible(hpid_ctid_map[device->id], tmp_h_entry, entry, hpid) {
+                hash_for_each_possible(hpid_ctid_map[device->bd_data->dev_id][device->id], tmp_h_entry, entry, hpid) {
                     if(tmp_h_entry->hpid == hpid) {
                         list_for_each_safe(l_p, l_n, &tmp_h_entry->ctid_list) {
                             l_entry = list_entry(l_p, struct ctid_entry, list);
@@ -262,7 +265,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // This file descriptor is used for sending user interrupts to the user space (see vfpga_uisr.c)
         // Args: Coyote thread ID (ctid), Event file descriptor (efd)
         case IOCTL_REGISTER_EVENTFD:
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, 2 * sizeof(uint64_t));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, 2 * sizeof(uint64_t));
+                ret_val = 0;
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, 2 * sizeof(uint64_t));
+            }
             if (ret_val) {
                 pr_warn("user data could not be coppied, ret_val: %d\n", ret_val);
             } else {
@@ -276,7 +284,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Unregisters a previously registered event file descriptor (efd) for a Coyote thread ID (ctid)
         // Args: Coyote thread ID (ctid)
         case IOCTL_UNREGISTER_EVENTFD:
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(uint64_t));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, sizeof(uint64_t));
+                ret_val = 0;
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(uint64_t));
+            }
             if (ret_val) {
                 pr_warn("user data could not be coppied, ret_val: %d\n", ret_val);
             } else {
@@ -287,7 +300,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Explicit mapping of user pages; will map the user pages into the vFPGA's TLB and set-up corresponding card buffers, if enabled
         // Args: Virtual address, length, Coyote thread ID (ctid), target memory block (applicable only to Versal devices)
         case IOCTL_MAP_USER_MEM:
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, 4 * sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, 4 * sizeof(unsigned long));
+                ret_val = 0;
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, 4 * sizeof(unsigned long));
+            }
             if (ret_val != 0) {
                 pr_warn("user data could not be coppied, return %d\n", ret_val);
             } else {
@@ -319,7 +337,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Explictily unmap (release) user pages 
         // Args: Virtual address, Coyote thread ID (ctid)
         case IOCTL_UNMAP_USER_MEM:
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, 2 * sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, 2 * sizeof(unsigned long));
+                ret_val = 0; 
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, 2 * sizeof(unsigned long));
+            }
             if (ret_val != 0) {
                 pr_warn("user data could not be coppied, return %d\n", ret_val);
             } else {
@@ -339,10 +362,15 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
             break;
 
         // Map (attach) DMA Buffer
-        // Args: DMA Buffer file descriptor (fd), virtual address, Coyote thread ID (ctid), target memory block (applicable only to Versal devices)
+        // Args: DMA Buffer file descriptor (fd), virtual address, Coyote thread ID (ctid)
         case IOCTL_MAP_DMABUF:
             #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, 4 * sizeof(unsigned long));
+                ret_val = 0; 
+            } else {
                 ret_val = copy_from_user(&tmp, (unsigned long *) arg, 4 * sizeof(unsigned long));
+            }
                 if (ret_val != 0) {
                     pr_warn("user data could not be coppied, return %d\n", ret_val);
                 } else {
@@ -372,7 +400,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Args: DMA Buffer file descriptor (fd), Coyote thread ID (ctid)
         case IOCTL_UNMAP_DMABUF:
             #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, 2 * sizeof(unsigned long));
+                ret_val = 0; 
+            } else {
                 ret_val = copy_from_user(&tmp, (unsigned long *) arg, 2 * sizeof(unsigned long));
+            }
                 if (ret_val != 0) {
                     pr_warn("user data could not be coppied, return %d\n", ret_val);
                 } else {
@@ -402,7 +435,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
                 return -1;
             }
 
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, 3 * sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *) arg, 3 * sizeof(unsigned long));
+                ret_val = 0; 
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, 3 * sizeof(unsigned long));
+            }
             if (ret_val != 0) {
                 pr_warn("user data could not be coppied, return %d\n", ret_val);
             } else {
@@ -423,7 +461,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
                 return -1;
             }
 
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, 3 * sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, 3 * sizeof(unsigned long));
+                ret_val = 0; 
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, 3 * sizeof(unsigned long));
+            }
             if (ret_val != 0) {
                 pr_warn("user data could not be coppied, return %d\n", ret_val);
             } else {
@@ -440,7 +483,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Args: IP address
         case IOCTL_SET_IP_ADDRESS:
             if (device_data->en_net) {
-                ret_val = copy_from_user(&tmp, (unsigned long*) arg, sizeof(unsigned long));
+                if (from_kernel) {
+                    memcpy(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+                    ret_val = 0; 
+                } else {
+                    ret_val = copy_from_user(&tmp, (unsigned long*) arg, sizeof(unsigned long));
+                }
                 if (ret_val != 0) {
                     pr_warn("user data could not be coppied, return %d\n", ret_val);
                 } else {
@@ -460,7 +508,12 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Args: MAC address
         case IOCTL_SET_MAC_ADDRESS:
             if (device_data->en_net) {
-                ret_val = copy_from_user(&tmp, (unsigned long*) arg, sizeof(unsigned long));
+                if (from_kernel) {
+                    memcpy(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+                    ret_val = 0; 
+                } else {
+                    ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+                }
                 if (ret_val != 0) {
                     pr_warn("user data could not be coppied, return %d\n", ret_val);
                 } else {
@@ -548,13 +601,18 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         // Marks that user a interrupt (notification) has been processed in the user space; for more details see vfpga_isr.c and vfpga_uisr.h
         // Args: Coyote thread ID (ctid)
         case IOCTL_SET_NOTIFICATION_PROCESSED:
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, sizeof(unsigned long));
+                ret_val = 0;
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+            }
             if (ret_val != 0) {
                 pr_warn("user data could not be copied, return %d\n", ret_val);
             } else {
                 int32_t ctid = (int32_t) tmp[0];
                 dbg_info("marking notification with vfpga ID %d, ctid %d as processed\n", device->id, ctid);
-                mutex_unlock(&user_notifier_lock[device->id][ctid]);
+                mutex_unlock(&user_notifier_lock[device->bd_data->dev_id][device->id][ctid]);
             }
             break;
         
@@ -563,14 +621,19 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
         case IOCTL_GET_NOTIFICATION_VALUE:
             // This ioctl does a read & write.
             // 1. retrieve the ctid from the user-space process.
-            ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+            if (from_kernel) {
+                memcpy(&tmp, (unsigned long *)arg, sizeof(unsigned long));
+                ret_val = 0;
+            } else {
+                ret_val = copy_from_user(&tmp, (unsigned long *) arg, sizeof(unsigned long));
+            }
             if (ret_val != 0) {
                 pr_warn("user data could not be copied, return %d\n", ret_val);
             } else {
                 // 2. send the interrupt value for this ctid!
                 int32_t ctid = (int32_t) tmp[0];
                 dbg_info("retrieving interrupt value for vfpga ID %d, ctid %d\n", device->id, ctid);
-                tmp[0] = interrupt_value[device->id][ctid];
+                tmp[0] = interrupt_value[device->bd_data->dev_id][device->id][ctid];
                 ret_val = copy_to_user((unsigned long *) arg, &tmp, sizeof(uint32_t));
                 if (ret_val != 0) {
                     pr_warn("could not copy data to user space, return %d\n", ret_val);
@@ -585,6 +648,22 @@ long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg)
     }
 
     return ret_val;
+}
+
+// IOCTL wrapper for vFPGA device that works with the file descriptor as main handle 
+long vfpga_dev_ioctl(struct file *file, unsigned int command, unsigned long arg) {
+        
+    #ifdef HMM_KERNEL    
+        struct task_struct *task;
+        struct mm_struct *mm;
+    #endif
+
+    // Parse device and device attributes
+    struct vfpga_dev *device = (struct vfpga_dev *) file->private_data;
+    BUG_ON(!device);
+
+    // Calling the actual functionality function for ioctl 
+    return vfpga_dev_ioctl_impl(device, command, arg, false);
 }
 
 int vfpga_dev_mmap(struct file *file, struct vm_area_struct *vma) {
