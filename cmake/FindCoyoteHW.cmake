@@ -37,8 +37,9 @@ file(MAKE_DIRECTORY ${IPREPO_DIR})
 ############################################
 ##            USER CONFIGURATION          ##
 ############################################
-# Target FPGA device; supported Alveo U55C, Alveo U280, Alveo U250, Alveo V80
 set(FDEV_NAME "0" CACHE STRING "Target FPGA device")
+
+set(NIA_ETH_DIR "${CYT_DIR}/deps/nia-eth" CACHE STRING "Path to the nia-eth MAC subsystem source tree")
 
 ##
 ## BUILD CONFIGURATION
@@ -60,6 +61,9 @@ set(BUILD_APP 0 CACHE STRING "Build app portion of the design (on top of existin
 
 # Packetization size; data transfers (host, card or net) of size > PMTU_BYTES are split into multiple packets
 set(PMTU_BYTES 4096 CACHE STRING "Packetization size [B]")
+
+set(NET_MEM_SESSIONS 16)
+set(NET_MEM_WINDOW_BITS 18)
 
 # Unit tests/Simulation
 set(UNIT_TEST_DIR "${CMAKE_SOURCE_DIR}/unit-tests" CACHE STRING "Path to the unit-test folder.")
@@ -154,7 +158,10 @@ set(EN_NET_0 1 CACHE STRING "QSFP port 0")
 # Use QSFP port 1
 set(EN_NET_1 0 CACHE STRING "QSFP port 1")
 
-# Enable host networking 
+set(ALLOW_VERSAL_NET 0 CACHE STRING "Experimental: allow EN_NET on Versal devices (port in progress).")
+set(DCMAC_PHY "stub" CACHE STRING "Versal MAC PHY boundary implementation: stub | dcmac")
+set(DCMAC_RX_FRAME_FIFO_BRAM 1 CACHE STRING "RX frame FIFO is ours with BRAM storage, 1|0")
+
 set(EN_HOST_NETWORKING 0 CACHE STRING "Enable host networking")
 
 ##
@@ -437,7 +444,26 @@ macro(validation_checks_hw)
                 message(" ** V80 with BUILD_SHELL=1 or BUILD_APP=1 selected, ignoring static layer clock frequency setting (SCLK_F) and defaulting to 333 MHz")
                 set(SCLK_F 333)
             endif()
-        
+
+        elseif(FDEV_NAME STREQUAL "vp1552")
+            set(FPGA_ARCH "versal")
+            set(FPGA_PART xcvp1552-vsva2785-2mhp-i-s CACHE STRING "FPGA Part" FORCE)
+
+            set(DDR_SIZE 0)
+            set(N_DDR_CHAN 0)
+
+            set(HCLK_F 400)
+            set(HBM_SIZE 0)
+
+            set(MC_SIZE 30)
+            set(N_STRIPE_CHAN 32)
+            set(MEM_OFFSET 274877906944)
+
+            if (BUILD_SHELL OR BUILD_APP)
+                message(" ** VP1552 with BUILD_SHELL=1 or BUILD_APP=1 selected; no VP1552 static checkpoint is shipped, so BUILD_STATIC=1 (regenerating the static layer) is required. Ignoring SCLK_F and defaulting to 333 MHz")
+                set(SCLK_F 333)
+            endif()
+
         # Fail on unsupported device
         else()
             message(FATAL_ERROR "Target device not supported.")
@@ -557,6 +583,10 @@ macro(validation_checks_hw)
             set(CLOCK_PERIOD ${ACLK_P})
         endif()
         set(CLOCK_UNCERTAINTY "${HLS_CLOCK_UNCERTAINTY}%")
+        set(CLOCK_PERIOD ${CLOCK_PERIOD} CACHE STRING
+            "Target clock period of every network HLS service, in nanoseconds" FORCE)
+        set(CLOCK_UNCERTAINTY ${CLOCK_UNCERTAINTY} CACHE STRING
+            "Clock uncertainty of every network HLS service" FORCE)
         ##
         ## Network
         ##
@@ -608,7 +638,82 @@ macro(validation_checks_hw)
             set(EN_NET 0)
         endif()
 
-        if (EN_NET_1 AND FPGA_ARCH STREQUAL "versal")
+        if(EN_SNIFFER)
+            message(FATAL_ERROR
+                "EN_SNIFFER=1 is refused on this branch. The packet_sniffer instantiation is "
+                "absent from hw/hdl/network/stack/network_stack.sv, so the build would produce "
+                "no sniffer. Set EN_SNIFFER=0. Example 11 (packet sniffer) does not build here.")
+        endif()
+
+        if(NOT DEFINED TCP_STACK_MAX_SESSIONS)
+            set(NET_MEM_SESSIONS 1000)
+        else()
+            set(NET_MEM_SESSIONS ${TCP_STACK_MAX_SESSIONS})
+        endif()
+        if(NOT DEFINED TCP_STACK_WINDOW_SCALING_EN)
+            set(NET_MEM_WINDOW_BITS 18)
+        elseif(TCP_STACK_WINDOW_SCALING_EN)
+            set(NET_MEM_WINDOW_BITS 18)
+        else()
+            set(NET_MEM_WINDOW_BITS 16)
+        endif()
+
+        if(EN_NET AND NOT EN_CARD AND EN_TCP)
+            math(EXPR NET_MEM_MAX_SESSIONS "1 << (30 - ${NET_MEM_WINDOW_BITS})")
+            if(NET_MEM_SESSIONS GREATER NET_MEM_MAX_SESSIONS)
+                message(FATAL_ERROR
+                    "TCP_STACK_MAX_SESSIONS=${NET_MEM_SESSIONS} exceeds the ${NET_MEM_MAX_SESSIONS} "
+                    "addressable at WINDOW_BITS=${NET_MEM_WINDOW_BITS} (toe's buffer address is 30 "
+                    "bits: tx_engine.cpp:233-235). Sessions above that alias onto one another.")
+            endif()
+            math(EXPR NET_MEM_BYTES "${NET_MEM_SESSIONS} * (1 << ${NET_MEM_WINDOW_BITS})")
+            math(EXPR NET_MEM_URAM "(${NET_MEM_BYTES} / 262144) * 8")
+            if(NET_MEM_URAM GREATER 1301)
+                message(FATAL_ERROR
+                    "The DRAM-free network memory TCP shim needs ${NET_MEM_BYTES} B = ~${NET_MEM_URAM} "
+                    "URAM, more than the 1301 on this device. Lower TCP_STACK_MAX_SESSIONS "
+                    "(S9 §2.5 fits-on-chip table: 16 sessions = 4 MiB = 128 URAM = 9.84 %).")
+            endif()
+            message(STATUS "NIA net memory shim (TCP/F1): ${NET_MEM_SESSIONS} sessions x 2^${NET_MEM_WINDOW_BITS} "
+                           "= ${NET_MEM_BYTES} B, ~${NET_MEM_URAM} URAM (measured 128 at 4 MiB)")
+        endif()
+
+        if(EN_NET AND NOT EN_CARD AND EN_RDMA)
+            math(EXPR NET_MEM_RDMA_BYTES "1024 * ${PMTU_BYTES}")
+            math(EXPR NET_MEM_RDMA_URAM "(${NET_MEM_RDMA_BYTES} / 262144) * 8")
+            if(NET_MEM_RDMA_URAM GREATER 1301)
+                message(FATAL_ERROR
+                    "The DRAM-free RDMA retransmit shim needs ${NET_MEM_RDMA_BYTES} B = "
+                    "~${NET_MEM_RDMA_URAM} URAM, more than the 1301 on this device.")
+            endif()
+            message(STATUS "NIA net memory shim (RDMA/F4): 1024 slots x ${PMTU_BYTES} B "
+                           "= ${NET_MEM_RDMA_BYTES} B, ~${NET_MEM_RDMA_URAM} URAM")
+        endif()
+
+        if (EN_NET AND FDEV_NAME STREQUAL "vp1552")
+            if (NOT ALLOW_VERSAL_NET)
+                message(FATAL_ERROR "Networking not supported yet on Versal devices. "
+                                    "Set -DALLOW_VERSAL_NET=1 to build it anyway (experimental, "
+                                    "expected to fail: no Versal MAC exists in "
+                                    "scripts/ip_inst/network_infrastructure.tcl and the Versal shell "
+                                    "has no dclk for the MAC wrapper's init_clk).")
+            else()
+                message(WARNING "*********************************************************************\n"
+                                "** EXPERIMENTAL: EN_NET=1 on a Versal device (ALLOW_VERSAL_NET=1).\n"
+                                "** This configuration is INCOMPLETE and is NOT expected to produce a\n"
+                                "** working image. Known gaps:\n"
+                                "**   1. scripts/ip_inst/network_infrastructure.tcl instantiates\n"
+                                "**      cmac_usplus only; no Versal MAC (DCMAC/GTM) path exists.\n"
+                                "**   2. On Versal the shell has no dclk, so network_top's init_clk is\n"
+                                "**      driven from xclk (SCLK_F MHz) instead of a dedicated 100 MHz clock.\n"
+                                "**   3. EN_TCP/EN_RDMA place their buffers on card memory (axi_mem[]),\n"
+                                "**      which a device with AV_DDR=0 and AV_HBM=0 does not have.\n"
+                                "** Do not report failures of this configuration as Coyote bugs.\n"
+                                "*********************************************************************")
+            endif()
+        endif()
+
+        if (EN_NET_1 AND FDEV_NAME STREQUAL "v80")
             message(FATAL_ERROR "Versal devices currently support networking only via QSFP port 0. Set EN_NET_1=0, EN_NET_0=")
         endif()
         
@@ -745,7 +850,6 @@ macro(validation_checks_hw)
         if(N_GP_RW GREATER 0)
             set(EN_GP_RW 1)
         endif()
-
 
         ##
         ## Rest of parameters
@@ -1023,7 +1127,9 @@ endmacro()
 macro(gen_targets)
     if(EN_NET)
         add_subdirectory(${CYT_DIR}/hw/services/network ${CMAKE_BINARY_DIR}/network)
-        set(NET_SYNTH_CMD COMMAND make services)
+        if(EN_TCP OR EN_RDMA)
+            set(NET_SYNTH_CMD COMMAND make services)
+        endif()
     endif()
 
     if(LOAD_APPS)
@@ -1132,7 +1238,6 @@ macro(gen_targets)
             )
         endif()
     endif()
-
 
     if(BUILD_SHELL OR BUILD_STATIC) 
         # Versal devices do not support nested DFX (shell subdivision and recombination);

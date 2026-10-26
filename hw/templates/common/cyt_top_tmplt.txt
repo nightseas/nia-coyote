@@ -38,6 +38,7 @@ import lynxTypes::*;
 // ================-----------------------------------------------------------------
 
 module cyt_top (
+{% if cnfg.fdev != 'vp1552' or (cnfg.en_net and cnfg.dcmac_phy != 'stub') %}
     // GT 0
     (* io_buffer_type = "none" *) input  wire[3:0]            gt0_rxp_in,
     (* io_buffer_type = "none" *) input  wire[3:0]            gt0_rxn_in,
@@ -50,7 +51,7 @@ module cyt_top (
     (* io_buffer_type = "none" *) output wire                 qsfp0_lpmode,
     (* io_buffer_type = "none" *) output wire                 qsfp0_modseln,
 {% endif %}
-{% if (cnfg.fdev != 'u50d') and (cnfg.fdev != 'v80') %}  
+{% if cnfg.fdev != 'u50d' and cnfg.fdev != 'vp1552' and cnfg.fdev != 'v80' %}
     // GT 1
     (* io_buffer_type = "none" *) input  wire[3:0]            gt1_rxp_in,
     (* io_buffer_type = "none" *) input  wire[3:0]            gt1_rxn_in,
@@ -63,7 +64,8 @@ module cyt_top (
     (* io_buffer_type = "none" *) output wire                 qsfp1_lpmode,
     (* io_buffer_type = "none" *) output wire                 qsfp1_modseln,
 {% endif %}
-{% endif %}    
+{% endif %}
+{% endif %}
     {% if cnfg.fdev == 'u250' or cnfg.fdev == 'u200' or cnfg.fdev == 'u280' %}
     // DDR4 0
     (* io_buffer_type = "none" *) output wire                 c0_ddr4_act_n,
@@ -504,6 +506,7 @@ module cyt_top (
         .m_dma_wr_req_{{ i }}_rsp     (dma_wr_req_sh2st[{{ i }}].rsp),
 
     {% endfor %}
+    {% if cnfg.fdev != 'vp1552' or (cnfg.en_net and cnfg.dcmac_phy != 'stub') %}
         // I/O
         .gt0_rxp_in(gt0_rxp_in),
         .gt0_rxn_in(gt0_rxn_in),
@@ -511,13 +514,14 @@ module cyt_top (
         .gt0_txn_out(gt0_txn_out),
         .gt0_refclk_p(gt0_refclk_p),
         .gt0_refclk_n(gt0_refclk_n),
-    {% if (cnfg.fdev != 'u50d') and (cnfg.fdev != 'v80') %}  
+    {% if cnfg.fdev != 'u50d' and cnfg.fdev != 'vp1552' and cnfg.fdev != 'v80' %}
         .gt1_rxp_in(gt1_rxp_in),
         .gt1_rxn_in(gt1_rxn_in),
         .gt1_txp_out(gt1_txp_out),
         .gt1_txn_out(gt1_txn_out),
         .gt1_refclk_p(gt1_refclk_p),
         .gt1_refclk_n(gt1_refclk_n),
+    {% endif %}
     {% endif %}
     {% if cnfg.fdev == 'u250' or cnfg.fdev == 'u200' or cnfg.fdev == 'u280' %}
         .c0_ddr4_act_n(c0_ddr4_act_n),

@@ -83,6 +83,39 @@ proc call_write_hdl {r_path op c_cnfg c_reg} {
 }
 call_write_hdl $build_dir 1 0 0
 
+proc add_nia_eth_sources {nia_eth_dir sections} {
+    global clr_flow
+    set list_file "$nia_eth_dir/rtl/dcmac_seam_files.f"
+    if {![file exists $list_file]} {
+        error "nia-eth source list $list_file not found, set NIA_ETH_DIR to the nia-eth tree"
+    }
+    set list_handle [open $list_file r]
+    set list_lines [split [read $list_handle] "\n"]
+    close $list_handle
+    set section ""
+    set sources {}
+    foreach list_line $list_lines {
+        set list_line [string trim $list_line]
+        if {$list_line eq "" || [string index $list_line 0] eq "#"} { continue }
+        if {[regexp {^\[(.+)\]$} $list_line -> section_name]} {
+            set section $section_name
+            continue
+        }
+        if {[lsearch -exact $sections $section] >= 0} {
+            set source_path [file normalize "$nia_eth_dir/rtl/$list_line"]
+            if {![file exists $source_path]} {
+                error "nia-eth source $source_path named by section $section of $list_file not found"
+            }
+            lappend sources $source_path
+        }
+    }
+    if {[llength $sources] == 0} {
+        error "nia-eth source list $list_file named no file in sections $sections"
+    }
+    add_files -norecurse $sources
+    puts "[color $clr_flow "** Added [llength $sources] nia-eth sources from sections $sections"]"
+}
+
 # Add source files
 add_files "$hw_dir/hdl/pkg"
 add_files "$hw_dir/hdl/shell"
@@ -93,14 +126,50 @@ if {$cfg(en_card) eq 1} {
     add_files "$hw_dir/hdl/cdma/cdma_u"
 }
 if {$cfg(en_net) eq 1} {
-    add_files "$hw_dir/hdl/network/cmac"
-    add_files "$hw_dir/hdl/network/dcmac"
+    if {$cfg(fpga_arch) eq "ultrascale_plus"} {
+        add_files "$hw_dir/hdl/network/cmac"
+    }
+    if {$cfg(fdev) eq "v80"} {
+        add_files "$hw_dir/hdl/network/dcmac"
+    }
     add_files "$hw_dir/hdl/network/stack"
+    if {$cfg(fdev) eq "vp1552"} {
+        add_files "$hw_dir/hdl/network/versal"
+        add_files -norecurse "$hw_dir/hdl/network/dcmac_eth/dcmac_usr_reset_gen.sv"
+        add_files -norecurse "$hw_dir/hdl/network/dcmac_eth/dcmac_axis_wrapper.sv"
+
+        add_files "$hw_dir/hdl/network/nia_eth"
+        add_nia_eth_sources "$cfg(nia_eth_dir)" {COMMON TOP_SEAM PHY_RATE200 FIFO_IP}
+
+        set nia_eth_defines [list]
+        if {[info exists env(NIA_DCMAC_ETH_USR_RESET_MODE)]} {
+            lappend nia_eth_defines "DCMAC_ETH_USR_RESET_MODE=$env(NIA_DCMAC_ETH_USR_RESET_MODE)"
+        }
+        if {[info exists env(NIA_DCMAC_ETH_LOOPBACK_MODE)]} {
+            lappend nia_eth_defines "DCMAC_ETH_LOOPBACK_MODE=$env(NIA_DCMAC_ETH_LOOPBACK_MODE)"
+        }
+        if {[info exists env(NIA_DCMAC_ETH_200G)] && $env(NIA_DCMAC_ETH_200G) eq "1"} {
+            lappend nia_eth_defines "DCMAC_ETH_200G"
+        }
+        if {[info exists env(NIA_DCMAC_USR_MHZ)] && $env(NIA_DCMAC_USR_MHZ) ne ""} {
+            lappend nia_eth_defines \
+                "DCMAC_ETH_USR_KCYC_PER_MS=[expr {int(ceil($env(NIA_DCMAC_USR_MHZ)))}]"
+        }
+        if {[llength $nia_eth_defines]} {
+            set_property verilog_define $nia_eth_defines [current_fileset]
+            puts "NIA_ETH_DEFINES $nia_eth_defines"
+        }
+    }
     if {$cfg(en_rdma) eq 1} {
         add_files "$hw_dir/hdl/network/rdma"
     }
     if {$cfg(en_tcp) eq 1} {
         add_files "$hw_dir/hdl/network/tcp"
+    }
+    if {($cfg(en_tcp) eq 1 || $cfg(en_rdma) eq 1) && $cfg(en_card) eq 0} {
+        add_files -norecurse "$hw_dir/hdl/network/mem/nia_uram_sdp.sv"
+        add_files -norecurse "$hw_dir/hdl/network/mem/axi_uram_mem.sv"
+        add_files -norecurse "$hw_dir/hdl/network/mem/axi_uram_mem_intf.sv"
     }
     if {$cfg(en_host_networking) eq 1} {
         add_files "$hw_dir/hdl/network/host_networking"
@@ -183,7 +252,7 @@ if {$cfg(en_hcard) eq 1} {
 
 # Versal devices rely on the DCMAC for networking, which is instantiated in a BD
 # TODO (Versal): How to handle multiple network ports?
-if {$cfg(fpga_arch) eq "versal" && $cfg(en_net) eq 1} {
+if {$cfg(fdev) eq "v80" && $cfg(en_net) eq 1} {
     if {$cfg(en_net_0) eq 1} {
         source "$hw_dir/bd/versal/cr_dcmac.tcl" -notrace
         cr_bd_dcmac ""

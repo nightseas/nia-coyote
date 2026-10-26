@@ -89,6 +89,10 @@ assign m_req_host.req.last = request_src.last;
 assign m_req_card.req.last = request_src.last;
 assign m_req_host.req.rsrvd = 0;
 assign m_req_card.req.rsrvd = 0;
+assign m_req_host.req.cmd_last = 1'b1;
+assign m_req_card.req.cmd_last = 1'b1;
+assign m_req_host.req.offs = 0;
+assign m_req_card.req.offs = 0;
 
 assign ready_src = m_req_host.ready & m_req_card.ready;
 if(RDWR == 0) begin

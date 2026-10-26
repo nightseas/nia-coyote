@@ -50,8 +50,12 @@
 {% if cnfg.en_uc %}
 `define EN_UC
 {% endif %}
-{% if cnfg.fpga_arch =='versal' %}
+{% if cnfg.fdev == 'v80' %}
 `define NET_DCMAC
+{% endif %}
+{% if cnfg.fdev =='vp1552' %}
+`define NET_DCMAC
+`define NET_NIA_ETH_200G
 {% endif %}
 {% if cnfg.en_rdma %}
 `define EN_RDMA
@@ -95,6 +99,28 @@
 {% if cnfg.en_xch_2 %}
 `define EN_XCH_2
 {% endif %}
+{% if cnfg.fpga_arch == 'ultrascale_plus' %}
+`define FPGA_ARCH_ULTRASCALE_PLUS
+{% endif %}
+{% if cnfg.fpga_arch == 'versal' %}
+`define FPGA_ARCH_VERSAL
+{% endif %}
+{% if cnfg.fpga_arch == 'versal' and cnfg.en_net %}
+`ifndef DCMAC_FIFO_IP
+`define DCMAC_FIFO_IP
+`endif
+{% if cnfg.dcmac_rx_frame_fifo_bram == 1 %}
+`ifndef DCMAC_FRAME_FIFO_BRAM
+`define DCMAC_FRAME_FIFO_BRAM
+`endif
+{% endif %}
+{% if cnfg.dcmac_phy == 'stub' %}
+`ifndef DCMAC_LOOPBACK_MODE
+`define DCMAC_LOOPBACK_MODE 3'b001
+`endif
+{% endif %}
+{% endif %}
+
 {% if cnfg.en_stats %}
 `define EN_STATS
 {% endif %}
@@ -483,6 +509,9 @@ package lynxTypes;
         logic [N_REGIONS_BITS-1:0] vfid;
         logic [BLEN_BITS-1:0] len;
         logic last;
+        logic cmd_last;
+        logic [BEAT_LOG_BITS-1:0] offs;
+        logic [BEAT_LOG_BITS-1:0] tail;
     } mux_host_t;
 
     typedef struct packed {
@@ -543,7 +572,9 @@ package lynxTypes;
         logic [LEN_BITS-1:0] len;
         logic last;
 
-        logic [96-PADDR_BITS-LEN_BITS-1-1:0] rsrvd;
+        logic [96-PADDR_BITS-LEN_BITS-1-1-1-BEAT_LOG_BITS:0] rsrvd;
+        logic cmd_last;
+        logic [BEAT_LOG_BITS-1:0] offs;
     } dma_req_t;
 
     typedef struct packed {

@@ -68,7 +68,7 @@ logic done_src;
 logic [N_REGIONS_BITS-1:0] rr_reg;
 logic [N_REGIONS_BITS-1:0] vfid;
 
-metaIntf #(.STYPE(logic[1+N_REGIONS_BITS+BLEN_BITS-1:0])) user_seq_in (.*);
+metaIntf #(.STYPE(logic[2+N_REGIONS_BITS+BLEN_BITS+2*BEAT_LOG_BITS-1:0])) user_seq_in (.*);
 metaIntf #(.STYPE(logic[N_REGIONS_BITS-1:0])) done_seq_in (.*);
 logic [N_REGIONS_BITS-1:0] done_vfid;
 
@@ -142,14 +142,14 @@ end
 
 assign n_tr = (request_snk[vfid].len - 1) >> BEAT_LOG_BITS;
 assign user_seq_in.valid = valid_src & ready_src;
-assign user_seq_in.data = {request_snk[vfid].last, vfid, n_tr};
+assign user_seq_in.data = {request_snk[vfid].last, vfid, n_tr, request_snk[vfid].cmd_last, request_snk[vfid].offs, request_snk[vfid].len[BEAT_LOG_BITS-1:0]};
 
 assign done_seq_in.valid = valid_src & ready_src;
 assign done_seq_in.data = vfid;
 
 // Multiplexer sequence
 queue_stream #(
-    .QTYPE(logic [1+N_REGIONS_BITS+BLEN_BITS-1:0]),
+    .QTYPE(logic [2+N_REGIONS_BITS+BLEN_BITS+2*BEAT_LOG_BITS-1:0]),
     .QDEPTH(N_OUTSTANDING)
 ) inst_seq_que_user (
     .aclk(aclk),
@@ -159,7 +159,7 @@ queue_stream #(
     .data_snk(user_seq_in.data),
     .val_src(m_mux.valid),
     .rdy_src(m_mux.ready),
-    .data_src({m_mux.data.last, m_mux.data.vfid, m_mux.data.len})
+    .data_src({m_mux.data.last, m_mux.data.vfid, m_mux.data.len, m_mux.data.cmd_last, m_mux.data.offs, m_mux.data.tail})
 );
 
 // Completion sequence

@@ -1,0 +1,11 @@
+sim_build*/
+obj_dir/
+__pycache__/
+*.pyc
+logs/
+results.xml
+results_*.xml
+vivado*.log
+vivado*.jou
+*.str
+.Xil/

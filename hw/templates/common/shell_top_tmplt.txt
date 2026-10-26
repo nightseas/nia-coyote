@@ -131,6 +131,7 @@ module shell_top (
     {% endfor %}
 
     // GT 0
+    {% if cnfg.fdev != 'vp1552' or (cnfg.en_net and cnfg.dcmac_phy != 'stub') %}
     (* io_buffer_type = "none" *) input  logic[3:0]                         gt0_rxp_in,
     (* io_buffer_type = "none" *) input  logic[3:0]                         gt0_rxn_in,
     (* io_buffer_type = "none" *) output  logic[3:0]                        gt0_txp_out,
@@ -138,7 +139,7 @@ module shell_top (
     (* io_buffer_type = "none" *) input  logic                              gt0_refclk_p,
     (* io_buffer_type = "none" *) input  logic                              gt0_refclk_n,
     
-    {% if (cnfg.fdev != 'u50d') and (cnfg.fdev != 'v80') %}  
+    {% if cnfg.fdev != 'u50d' and cnfg.fdev != 'vp1552' and cnfg.fdev != 'v80' %}
     // GT 1     
     (* io_buffer_type = "none" *) input  logic[3:0]                         gt1_rxp_in,
     (* io_buffer_type = "none" *) input  logic[3:0]                         gt1_rxn_in,
@@ -147,6 +148,7 @@ module shell_top (
     (* io_buffer_type = "none" *)  input  logic                             gt1_refclk_p,
     (* io_buffer_type = "none" *)  input  logic                             gt1_refclk_n,
 
+    {% endif %}
     {% endif %}
     {% if cnfg.fdev == 'u250' or cnfg.fdev == 'u200' or cnfg.fdev == 'u280' %}
     // DDR4 0
@@ -412,6 +414,9 @@ module shell_top (
     logic hclk;
     logic hresetn;
     logic lckresetn;
+
+    logic sys_reset;
+    assign sys_reset = 1'b0;
     
     AXI4 s_axi_main();
     `AXI_ASSIGN_S2I(s_axi_main, s_axi_main)    
@@ -717,7 +722,7 @@ module shell_top (
         .m_ddr_offset_addr_rdma(ddr_offset_addr_rdma),
 {% endif %}
 {% if cnfg.en_tcp %}
-        .m_ddr_offset_addr(ddr_offset_addr_tcp),
+        .m_ddr_offset_addr_tcp(ddr_offset_addr_tcp),
 {% endif %}
 {% if cnfg.en_stats %}
   {% if cnfg.en_xch_0 %}
@@ -806,14 +811,27 @@ module shell_top (
 {% endif %}
     ) inst_network_top (
         .sys_reset(sys_reset),
+{% if cnfg.fpga_arch == 'ultrascale_plus' %}
         .init_clk(dclk),
+{% else %}
+        .init_clk(xclk),
+{% endif %}
 {% if cnfg.en_net_0 %}
+{% if cnfg.fdev == 'vp1552' and cnfg.dcmac_phy == 'stub' %}
+        .gt_refclk_p(1'b0),
+        .gt_refclk_n(1'b1),
+        .gt_rxp_in(4'b0000),
+        .gt_rxn_in(4'b1111),
+        .gt_txp_out(),
+        .gt_txn_out(),
+{% else %}
         .gt_refclk_p(gt0_refclk_p),
         .gt_refclk_n(gt0_refclk_n),
         .gt_rxp_in(gt0_rxp_in),
         .gt_rxn_in(gt0_rxn_in),
         .gt_txp_out(gt0_txp_out),
         .gt_txn_out(gt0_txn_out),
+{% endif %}
 {% endif %}
 {% if cnfg.en_net_1 %}
         .gt_refclk_p(gt1_refclk_p),
@@ -1495,11 +1513,53 @@ module shell_top (
 
 {% endif %}
 
+{% else %}
+{% if cnfg.en_tcp or cnfg.en_rdma %}
+{% if cnfg.en_tcp %}
+    logic        tcp_mem_oob_err, tcp_mem_proto_err, tcp_mem_xsess_err, tcp_mem_slot_err;
+    logic [31:0] tcp_mem_oob_cnt, tcp_mem_proto_cnt, tcp_mem_xsess_cnt, tcp_mem_slot_cnt;
+
+    axi_uram_mem_intf #(
+        .N_SESSIONS({{ cnfg.net_mem_sessions }}),
+        .WINDOW_BITS({{ cnfg.net_mem_window_bits }}),
+        .ADDR_MAP("flat")
+    ) inst_tcp_uram_mem (
+        .aclk(aclk),
+        .aresetn(aresetn),
+        .s_axi(axi_ddr_tcp),
+        .oob_err(tcp_mem_oob_err),           .oob_cnt(tcp_mem_oob_cnt),
+        .proto_err(tcp_mem_proto_err),       .proto_cnt(tcp_mem_proto_cnt),
+        .xsess_err(tcp_mem_xsess_err),       .xsess_cnt(tcp_mem_xsess_cnt),
+        .slot_ovf_err(tcp_mem_slot_err),     .slot_ovf_cnt(tcp_mem_slot_cnt)
+    );
 {% endif %}
+{% if cnfg.en_rdma %}
+    logic        rdma_mem_oob_err, rdma_mem_proto_err, rdma_mem_xsess_err, rdma_mem_slot_err;
+    logic [31:0] rdma_mem_oob_cnt, rdma_mem_proto_cnt, rdma_mem_xsess_cnt, rdma_mem_slot_cnt;
+
+    axi_uram_mem_intf #(
+        .ADDR_MAP("rdma_slot"),
+        .PMTU_BYTES({{ cnfg.pmtu }}),
+        .PID_BITS(PID_BITS),
+        .RDMA_OST_BITS($clog2(RDMA_N_WR_OUTSTANDING)),
+        .RDMA_SHIFT(RDMA_MEM_SHIFT)
+    ) inst_rdma_uram_mem (
+        .aclk(aclk),
+        .aresetn(aresetn),
+        .s_axi(axi_ddr_rdma),
+        .oob_err(rdma_mem_oob_err),          .oob_cnt(rdma_mem_oob_cnt),
+        .proto_err(rdma_mem_proto_err),      .proto_cnt(rdma_mem_proto_cnt),
+        .xsess_err(rdma_mem_xsess_err),      .xsess_cnt(rdma_mem_xsess_cnt),
+        .slot_ovf_err(rdma_mem_slot_err),    .slot_ovf_cnt(rdma_mem_slot_cnt)
+    );
+{% endif %}
+{% endif %}
+
+{% endif %}
+
     // ================-----------------------------------------------------------------
     // DYNAMIC WRAPPER
     // ================-----------------------------------------------------------------
-
     design_dynamic_top inst_dynamic (
         .s_axi_ctrl(axi_ctrl[0+:{{ cnfg.n_reg }}]),
 {% if cnfg.en_avx %}

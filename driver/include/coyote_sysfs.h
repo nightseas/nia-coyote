@@ -57,6 +57,8 @@ ssize_t cyt_attr_eost_show(struct kobject *kobj, struct kobj_attribute *attr, ch
 /// Set PR end of start-up (EOS) time
 ssize_t cyt_attr_eost_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
 
+ssize_t cyt_attr_shell_reset_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
+
 /// Get network stats on port QSFP0
 ssize_t cyt_attr_nstats_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf);
 

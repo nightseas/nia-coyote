@@ -55,6 +55,7 @@ file mkdir $device_ip_dir
 ########################################################################################################
 set cfg(fdev)                   ${FDEV_NAME}
 set cfg(fpga_arch)              ${FPGA_ARCH}
+set cfg(nia_eth_dir)            ${NIA_ETH_DIR}
 set cfg(build_dir)              ${CMAKE_BINARY_DIR}
 set cfg(static_path)            ${STATIC_PATH}
 set cfg(shell_path)             ${SHELL_PATH}
@@ -106,8 +107,12 @@ set cfg(sniffer_vfpga_id)       ${SNIFFER_VFPGA_ID}
 set cfg(en_net_0)               ${EN_NET_0}
 set cfg(en_net_1)               ${EN_NET_1}
 set cfg(en_net)                 ${EN_NET}   
+set cfg(dcmac_phy)              ${DCMAC_PHY}
+set cfg(dcmac_rx_frame_fifo_bram) ${DCMAC_RX_FRAME_FIFO_BRAM}
 set cfg(qsfp)                   ${QSFP}
 set cfg(pmtu)                   ${PMTU_BYTES}
+set cfg(net_mem_sessions)       ${NET_MEM_SESSIONS}
+set cfg(net_mem_window_bits)    ${NET_MEM_WINDOW_BITS}
 set cfg(cores)                  ${COMP_CORES}
 set cfg(build_opt)              ${BUILD_OPT}
 set cfg(stat_probe)             ${STATIC_PROBE}

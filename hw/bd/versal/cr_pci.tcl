@@ -207,7 +207,13 @@ proc cr_bd_design_static { parentCell } {
   set_property CONFIG.CONST_VAL {1} $const_1
 
   # CIPS
-  if {$cnfg(fdev) eq "v80"} {
+  if {$cnfg(fdev) eq "v80" || $cnfg(fdev) eq "vp1552"} {
+    if {$cnfg(fdev) eq "vp1552"} {
+      set pmc_ref_clk_freq_mhz 50
+    } else {
+      set pmc_ref_clk_freq_mhz 33.333333
+    }
+
     # If using a single Gen5x8 QDMA controller, PCIE1 must be selected to ensure compliance with PCI SIG
     # For more details, see: https://xilinx.github.io/AVED/latest/AVED%2BV80%2B-%2BCIPS%2BConfiguration.html#cpm5-basic-configuration
     if {$cnfg(pcie_gen) eq 5} {
@@ -254,7 +260,7 @@ proc cr_bd_design_static { parentCell } {
           PS_USE_PS_NOC_PCI_1 {1} \
         } \
         CONFIG.DEVICE_INTEGRITY_MODE {Custom} \
-        CONFIG.PS_PMC_CONFIG { \
+        CONFIG.PS_PMC_CONFIG [subst { \
           BOOT_MODE {Custom} \
           CLOCK_MODE {Custom} \
           DESIGN_MODE {1} \
@@ -264,7 +270,7 @@ proc cr_bd_design_static { parentCell } {
           PMC_CRP_PL0_REF_CTRL_FREQMHZ {33.3333333} \
           PMC_QSPI_FBCLK {{ENABLE 1} {IO {PMC_MIO 6}}} \
           PMC_QSPI_PERIPHERAL_ENABLE {0} \
-          PMC_REF_CLK_FREQMHZ {33.333333} \
+          PMC_REF_CLK_FREQMHZ {$pmc_ref_clk_freq_mhz} \
           PMC_SD0 {{CD_ENABLE 0} {CD_IO {PMC_MIO 24}} {POW_ENABLE 0} {POW_IO {PMC_MIO 17}} {RESET_ENABLE 0} {RESET_IO {PMC_MIO 17}} {WP_ENABLE 0} {WP_IO {PMC_MIO 25}}} \
           PMC_SD0_PERIPHERAL {{CLK_100_SDR_OTAP_DLY 0x00} {CLK_200_SDR_OTAP_DLY 0x00} {CLK_50_DDR_ITAP_DLY 0x00} {CLK_50_DDR_OTAP_DLY 0x00} {CLK_50_SDR_ITAP_DLY 0x00} {CLK_50_SDR_OTAP_DLY 0x00} {ENABLE 0}\
         {IO {PMC_MIO 13 .. 25}}} \
@@ -286,7 +292,7 @@ proc cr_bd_design_static { parentCell } {
           SMON_OT {{THRESHOLD_LOWER -25} {THRESHOLD_UPPER 125}} \
           SMON_TEMP_AVERAGING_SAMPLES {0} \
           SMON_USER_TEMP {{THRESHOLD_LOWER 0} {THRESHOLD_UPPER 125} {USER_ALARM_TYPE window}} \
-        } \
+        }] \
       ] $versal_cips_0
     } elseif {$cnfg(pcie_gen) eq 4} {
       # And, if using a Gen4x16 QDMA controller, PCIE0 must be selected
@@ -333,7 +339,7 @@ proc cr_bd_design_static { parentCell } {
           PS_USE_PS_NOC_PCI_1 {1} \
         } \
         CONFIG.DEVICE_INTEGRITY_MODE {Custom} \
-        CONFIG.PS_PMC_CONFIG { \
+        CONFIG.PS_PMC_CONFIG [subst { \
           BOOT_MODE {Custom} \
           CLOCK_MODE {Custom} \
           DESIGN_MODE {1} \
@@ -343,7 +349,7 @@ proc cr_bd_design_static { parentCell } {
           PMC_CRP_PL0_REF_CTRL_FREQMHZ {33.3333333} \
           PMC_QSPI_FBCLK {{ENABLE 1} {IO {PMC_MIO 6}}} \
           PMC_QSPI_PERIPHERAL_ENABLE {0} \
-          PMC_REF_CLK_FREQMHZ {33.333333} \
+          PMC_REF_CLK_FREQMHZ {$pmc_ref_clk_freq_mhz} \
           PMC_SD0 {{CD_ENABLE 0} {CD_IO {PMC_MIO 24}} {POW_ENABLE 0} {POW_IO {PMC_MIO 17}} {RESET_ENABLE 0} {RESET_IO {PMC_MIO 17}} {WP_ENABLE 0} {WP_IO {PMC_MIO 25}}} \
           PMC_SD0_PERIPHERAL {{CLK_100_SDR_OTAP_DLY 0x00} {CLK_200_SDR_OTAP_DLY 0x00} {CLK_50_DDR_ITAP_DLY 0x00} {CLK_50_DDR_OTAP_DLY 0x00} {CLK_50_SDR_ITAP_DLY 0x00} {CLK_50_SDR_OTAP_DLY 0x00} {ENABLE 0}\
         {IO {PMC_MIO 13 .. 25}}} \
@@ -365,10 +371,10 @@ proc cr_bd_design_static { parentCell } {
           SMON_OT {{THRESHOLD_LOWER -25} {THRESHOLD_UPPER 125}} \
           SMON_TEMP_AVERAGING_SAMPLES {0} \
           SMON_USER_TEMP {{THRESHOLD_LOWER 0} {THRESHOLD_UPPER 125} {USER_ALARM_TYPE window}} \
-        } \
+        }] \
       ] $versal_cips_0
     } else {
-      puts "ERROR: Unsupported PCIe configuration: Gen$cnfg(pcie_gen). Supported configurations for V80 are Gen4x16 and Gen5x8."
+      puts "ERROR: Unsupported PCIe configuration: Gen$cnfg(pcie_gen). Supported configurations for $cnfg(fdev) are Gen4x16 and Gen5x8."
       exit 1
     }   
   } else {

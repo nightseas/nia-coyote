@@ -60,6 +60,7 @@ logic [0:0] plast_C, plast_N;
 logic [VADDR_BITS-1:0] plvaddr_C, plvaddr_N;
 logic [VADDR_BITS-1:0] prvaddr_C, prvaddr_N;
 logic [LEN_BITS-1:0] plen_C, plen_N;
+logic [LEN_BITS-1:0] pmlen_C, pmlen_N;
 
 // Requests internal
 metaIntf #(.STYPE(dreq_t)) req_pre_parsed (.*);
@@ -84,6 +85,7 @@ always_ff @(posedge aclk) begin: PROC_REG
         plvaddr_C <= plvaddr_N;
         prvaddr_C <= prvaddr_N;
         plen_C <= plen_N;
+        pmlen_C <= pmlen_N;
     end
 end
 
@@ -151,6 +153,7 @@ always_comb begin: DP
     pop_N = pop_C;
     plast_N = plast_C;
     plen_N = plen_C;
+    pmlen_N = pmlen_C;
     plvaddr_N = plvaddr_C;
     prvaddr_N = prvaddr_C;
 
@@ -179,10 +182,12 @@ always_comb begin: DP
     req_parsed.data.req_2.vaddr = plvaddr_C;
     req_parsed.data.req_2.strm = req_1_C.strm;
     req_parsed.data.req_2.dest = req_1_C.dest;
+    req_parsed.data.req_2.len = pmlen_C;
 
     case(state_C)
         ST_IDLE: begin
             req_pre_parsed.ready = 1'b1;
+            pmlen_N = 0;
 
             if(req_pre_parsed.valid) begin
                 req_1_N = req_pre_parsed.data.req_1;
@@ -211,6 +216,7 @@ always_comb begin: DP
 
                 pop_N = RC_RDMA_WRITE_FIRST;
                 plen_N = PMTU_BYTES;   
+                pmlen_N = req_2_C.len;
                 plast_N = 1'b0;           
             end
             else begin
@@ -223,6 +229,7 @@ always_comb begin: DP
         end
 
         ST_PARSE_WRITE: begin
+            pmlen_N = 0;
             plvaddr_N = req_1_C.vaddr;
             prvaddr_N = req_2_C.vaddr;
             

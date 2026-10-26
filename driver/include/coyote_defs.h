@@ -100,6 +100,7 @@ extern char *ip_addr[MAX_FPGA_DEVICES];
 extern char *mac_addr[MAX_FPGA_DEVICES];
 extern long int eost;
 extern bool en_hmm;
+extern bool skip_shell_reset;
 
 //////////////////////////////////////////////
 //                CONSTANTS                //
@@ -622,7 +623,6 @@ struct vfpga_cnfg_regs {
     // Rest is user space
 } __packed;
 
-
 //////////////////////////////////////////////
 //                STRUCTS                  //
 ////////////////////////////////////////////
@@ -754,6 +754,8 @@ struct user_pages {
 
     /// Set to true if the buffer is using huge pages (or can be coalesced to a huge page), false otherwise
     bool huge;
+
+    bool kernel_owned;
 
     /// Set to true if the buffer is currently residing on the host, false if not
     int32_t host;
@@ -1015,6 +1017,8 @@ struct vfpga_dev {
 
     /// Pointer to chunks used for PID allocation; used in conjuction with the list of Coyote threads
     struct chunk *pid_alloc;
+
+    struct chunk *pid_alloc_tail;
 
     /// Mutex for MMU operations (TLB mapping, unmapping, DMA Buff operations), ensuring atomic operations
     struct mutex mmu_lock;
@@ -1363,7 +1367,6 @@ typedef enum {
     REMOTE_TCP_SEND = 9  
 } CoyoteOper;
 
-
 // Various helper function to check the type of operation
 static inline bool isLocalRead(CoyoteOper oper) { return oper == LOCAL_READ || oper == LOCAL_TRANSFER; }
 
@@ -1382,7 +1385,6 @@ static inline bool isRemoteSend(CoyoteOper oper) { return oper == REMOTE_RDMA_SE
 static inline bool isRemoteWriteOrSend(CoyoteOper oper) { return oper == REMOTE_RDMA_SEND || oper == REMOTE_RDMA_WRITE; }
 
 static inline bool isRemoteTcp(CoyoteOper oper) { return oper == REMOTE_TCP_SEND; }
-
 
 // Scatter-gather entry for sync and offload operations
 struct syncSg {
@@ -1477,7 +1479,6 @@ struct tcpSg {
 #define CONN_CONTEXT_LQPN_OFFS              (0)
 #define CONN_CONTEXT_RQPN_OFFS              (16)
 #define CONN_CONTEXT_PORT_OFFS              (40)
-
 
 /**
  * @brief Wrapper around the ib_device struct that allows to point back to the vFPGA device struct 
@@ -1663,6 +1664,5 @@ static inline struct scenic_rdma_device *bddata_to_scenic_rdma_dev(struct bus_dr
 }
 
 #endif
-
 
 #endif // _COYOTE_DEFS_H_

@@ -99,6 +99,8 @@ void tlb_unmap_gup(struct vfpga_dev *device, struct user_pages *user_pg, pid_t h
  */
 void tlb_get_kernel_buffers(struct vfpga_dev *device, uint64_t vaddr, uint64_t paddr, int32_t ctid, size_t buffer_size);
 
+void tlb_put_kernel_buffers(struct vfpga_dev *device, int32_t ctid);
+
 /**
  * @brief Pins user pages and prepares them for TLB mapping
  *

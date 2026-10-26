@@ -32,6 +32,12 @@
 #include "reconfig_ops.h"
 #include "coyote_sysfs.h"
 
+void reset_shell(struct bus_driver_data *data);
+
+void write_network_identity(struct bus_driver_data *data);
+
+void write_writeback_addresses(struct vfpga_dev *device);
+
 /**
  * @brief Reads the synthesized shell configuration and populates fields of bus_driver_data
  * The configuration was specifified during the hardware synthesis in CMakeLists.txt

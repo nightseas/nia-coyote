@@ -21,6 +21,27 @@
 
 #include "coyote_setup.h"
 
+void reset_shell(struct bus_driver_data *data) {
+    data->stat_cnfg->reconfig_eost_reset = 0x0;
+    wmb();
+    usleep_range(DMA_MIN_SLEEP_CMD, DMA_MIN_SLEEP_CMD);
+
+    data->stat_cnfg->reconfig_eost_reset = 0x1;
+    wmb();
+    usleep_range(DMA_MIN_SLEEP_CMD, DMA_MIN_SLEEP_CMD);
+}
+
+void write_network_identity(struct bus_driver_data *data) {
+    data->shell_cnfg->net_ip = data->net_ip_addr;
+    data->shell_cnfg->net_mac = data->net_mac_addr;
+}
+
+void write_writeback_addresses(struct vfpga_dev *device) {
+    for (int j = 0; j < WB_BLOCKS; j++) {
+        device->cnfg_regs->wback[j] = device->wb_phys_addr + j * (N_CTID_MAX * sizeof(uint32_t));
+    }
+}
+
 ////////////////////////////////////////////////
 //            SHELL CONFIGURATION             //  
 ////////////////////////////////////////////////    
@@ -130,8 +151,7 @@ int read_shell_config(struct bus_driver_data *data) {
         data->net_ip_addr = (uint64_t) tmp;
         ret_val = kstrtol(dev_mac, 16, &tmp);
         data->net_mac_addr = (uint64_t) tmp;
-        data->shell_cnfg->net_ip = data->net_ip_addr;
-        data->shell_cnfg->net_mac = data->net_mac_addr;
+        write_network_identity(data);
         dbg_info("set network ip %08x, mac %012llx (device %d)\n", data->net_ip_addr, data->net_mac_addr, data->dev_id);
     }
 
@@ -263,6 +283,7 @@ static struct kobj_attribute kobj_attr_engines = __ATTR_RO(cyt_attr_engines);
 #endif
 static struct kobj_attribute kobj_attr_cnfg = __ATTR_RO(cyt_attr_cnfg);
 static struct kobj_attribute kobj_attr_eost = __ATTR(cyt_attr_eost, 0664, cyt_attr_eost_show, cyt_attr_eost_store);
+static struct kobj_attribute kobj_attr_shell_reset = __ATTR_WO(cyt_attr_shell_reset);
 #ifdef PLATFORM_VERSAL
 static struct kobj_attribute kobj_attr_qdma_debug_regs = __ATTR_RO(cyt_attr_qdma_debug_regs);
 #endif
@@ -278,6 +299,7 @@ static struct attribute *attrs[] = {
     #endif
     &kobj_attr_cnfg.attr,
     &kobj_attr_eost.attr,
+    &kobj_attr_shell_reset.attr,
     #ifdef PLATFORM_VERSAL
     &kobj_attr_qdma_debug_regs.attr,
     #endif
@@ -430,12 +452,14 @@ int setup_vfpga_devices(struct bus_driver_data *data) {
         }
 
         // Variable housekeeping for Coyote threads; ID starts from 0, increments by 1
-        for (int j = 0; j < N_CTID_MAX - 1; j++) {
+        for (int j = 0; j < N_CTID_MAX; j++) {
             data->vfpga_dev[i].ctid_chunks[j].id = j;
             data->vfpga_dev[i].ctid_chunks[j].used = false;
-            data->vfpga_dev[i].ctid_chunks[j].next = &data->vfpga_dev[i].ctid_chunks[j + 1];
+            data->vfpga_dev[i].ctid_chunks[j].next =
+                (j < N_CTID_MAX - 1) ? &data->vfpga_dev[i].ctid_chunks[j + 1] : NULL;
         }
         data->vfpga_dev[i].pid_alloc = &data->vfpga_dev[i].ctid_chunks[0];
+        data->vfpga_dev[i].pid_alloc_tail = &data->vfpga_dev[i].ctid_chunks[N_CTID_MAX - 1];
 
         // Initialize device spinlocks and mutexes
         spin_lock_init(&data->vfpga_dev[i].irq_lock);
@@ -481,9 +505,7 @@ int setup_vfpga_devices(struct bus_driver_data *data) {
                 goto err_wb;
             }
 
-            for (int j = 0; j < WB_BLOCKS; j++) {
-                data->vfpga_dev[i].cnfg_regs->wback[j] = data->vfpga_dev[i].wb_phys_addr + j * (N_CTID_MAX * sizeof(uint32_t));
-            }
+            write_writeback_addresses(&data->vfpga_dev[i]);
 
             dbg_info(
                 "allocated memory for descriptor writeback, vaddr %llx, paddr %llx\n",

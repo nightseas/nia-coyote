@@ -333,16 +333,14 @@ end
 
 `ifdef EN_TCP
     meta_arbiter #(.DATA_BITS($bits(tcp_listen_req_r_t))) inst_tcp_listen_req (.aclk(aclk), .aresetn(aresetn), .s_meta(open_port_cmd), .m_meta(m_open_port_cmd));
-    meta_dest_mux #(.DATA_BITS($bits(tcp_listen_rsp_r_t))) inst_tcp_listen_req (.aclk(aclk), .aresetn(aresetn), .s_meta(s_open_port_sts), .m_meta(open_port_sts));
-    meta_arbiter #(.DATA_BITS($bits(tcp_open_req_r_t)))   inst_tcp_listen_req (.aclk(aclk), .aresetn(aresetn), .s_meta(open_conn_cmd), .m_meta(m_open_conn_cmd));
-    meta_dest_mux #(.DATA_BITS($bits(tcp_open_rsp_r_t)))  inst_tcp_listen_req (.aclk(aclk), .aresetn(aresetn), .s_meta(s_open_conn_sts), .m_meta(open_conn_sts));
+    meta_dest_mux #(.DATA_BITS($bits(tcp_listen_rsp_r_t))) inst_tcp_listen_rsp (.aclk(aclk), .aresetn(aresetn), .s_meta(s_open_port_sts), .m_meta(open_port_sts));
+    meta_arbiter #(.DATA_BITS($bits(tcp_open_req_r_t)))   inst_tcp_open_req (.aclk(aclk), .aresetn(aresetn), .s_meta(open_conn_cmd), .m_meta(m_open_conn_cmd));
+    meta_dest_mux #(.DATA_BITS($bits(tcp_open_rsp_r_t)))  inst_tcp_open_rsp (.aclk(aclk), .aresetn(aresetn), .s_meta(s_open_conn_sts), .m_meta(open_conn_sts));
 `endif
 
 `ifdef EN_WB
     meta_arbiter #(.DATA_BITS($bits(wback_t))) inst_meta_arb (.aclk(aclk), .aresetn(aresetn), .s_meta(wback), .m_meta(m_wback));
 `endif
-
-
 
 /////////////////////////////////////////////////////////////////////////////
 // DEBUG

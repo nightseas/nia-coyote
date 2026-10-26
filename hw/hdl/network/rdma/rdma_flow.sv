@@ -43,9 +43,12 @@ localparam integer RD_OP = 0;
 localparam integer WR_OP = 1;
 
 // -- FSM
-typedef enum logic[2:0]  {ST_IDLE, ST_ACK_LUP_WAIT, ST_REQ_LUP_WAIT, ST_ACK_LUP, ST_REQ_LUP} state_t;
+localparam integer PNTR_ADDR_BITS = 1+N_REGIONS_BITS+PID_BITS;
+
+typedef enum logic[2:0]  {ST_INIT, ST_IDLE, ST_ACK_LUP_WAIT, ST_REQ_LUP_WAIT, ST_ACK_LUP, ST_REQ_LUP} state_t;
 logic [2:0] state_C, state_N;
-logic [1+N_REGIONS_BITS+PID_BITS-1:0] addr_C, addr_N;
+logic [PNTR_ADDR_BITS-1:0] addr_C, addr_N;
+logic [PNTR_ADDR_BITS-1:0] init_addr_C, init_addr_N;
 
 logic [1:0] ssn_wr;
 logic [1+N_REGIONS_BITS+PID_BITS-1:0] ssn_addr;
@@ -58,6 +61,10 @@ metaIntf #(.STYPE(dreq_t)) req_out (.*);
 logic [RDMA_OST_BITS-1:0] tail, tail_next;
 logic [RDMA_OST_BITS-1:0] head, head_next;
 logic issued, issued_next;
+
+logic ack_take;
+
+assign ack_take = s_ack.valid && ((!s_ack.data.last) || ack_que_in.ready);
 
 
 // Pointer table
@@ -77,12 +84,14 @@ ram_sp_nc #(
 // REG
 always_ff @(posedge aclk) begin: PROC_REG
     if (aresetn == 1'b0) begin
-        state_C <= ST_IDLE;
+        state_C <= ST_INIT;
         addr_C <= 'X;
+        init_addr_C <= 0;
     end
     else begin
         state_C <= state_N;
         addr_C <= addr_N;
+        init_addr_C <= init_addr_N;
     end
 end
 
@@ -91,8 +100,11 @@ always_comb begin: NSL
 	state_N = state_C;
 
 	case(state_C)
+		ST_INIT:
+			state_N = (init_addr_C == {PNTR_ADDR_BITS{1'b1}}) ? ST_IDLE : ST_INIT;
+
 		ST_IDLE: 
-			state_N = (s_ack.valid) ? ST_ACK_LUP_WAIT : (s_req.valid & req_out.ready ? ST_REQ_LUP_WAIT : ST_IDLE);
+			state_N = (ack_take) ? ST_ACK_LUP_WAIT : (s_req.valid & req_out.ready ? ST_REQ_LUP_WAIT : ST_IDLE);
 
         ST_ACK_LUP_WAIT:
             state_N = ST_ACK_LUP;
@@ -117,6 +129,7 @@ assign tail = ssn_out[0+:RDMA_OST_BITS];
 
 always_comb begin: DP
     addr_N = addr_C;
+    init_addr_N = init_addr_C;
 
     // ACKs
     s_ack.ready = 1'b0;
@@ -140,8 +153,14 @@ always_comb begin: DP
     issued_next = 0;
 
     case(state_C)
+        ST_INIT: begin
+            ssn_wr = ~0;
+            ssn_addr = init_addr_C;
+            init_addr_N = init_addr_C + 1;
+        end
+
         ST_IDLE: begin
-            if(s_ack.valid) begin
+            if(ack_take) begin
                 s_ack.ready = 1'b1;
                 ack_que_in.valid = s_ack.data.last;
 
@@ -152,6 +171,14 @@ always_comb begin: DP
                 ssn_addr = {is_opcode_rd_req(s_req.data.req_1.opcode), s_req.data.req_1.vfid[N_REGIONS_BITS-1:0], s_req.data.req_1.pid};
                 addr_N = ssn_addr;
             end
+        end
+
+        ST_ACK_LUP_WAIT: begin
+            ssn_addr = addr_C;
+        end
+
+        ST_REQ_LUP_WAIT: begin
+            ssn_addr = addr_C;
         end
 
         ST_ACK_LUP: begin

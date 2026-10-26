@@ -115,13 +115,16 @@ module network_stack #(
 
 // Sync the reset (timing)
 (* DONT_TOUCH = "yes" *)
-logic nresetn_r = 1'b1;
-(* DONT_TOUCH = "yes" *)
 logic nresetn_r_int = 1'b1;
+(* DONT_TOUCH = "yes" *)
+logic nresetn_sync = 1'b1;
+(* MAX_FANOUT = 64 *)
+logic nresetn_r = 1'b1;
 
 always_ff @(posedge nclk) begin
     nresetn_r_int <= nresetn;
-    nresetn_r <= nresetn_r_int;
+    nresetn_sync <= nresetn_r_int;
+    nresetn_r <= nresetn_sync;
 end
 
 // Ip handler
@@ -173,7 +176,6 @@ metaIntf #(.STYPE(logic[MEM_STS_BITS-1:0])) tcp_mem_rd_sts [N_TCP_CHANNELS] (.ac
 metaIntf #(.STYPE(logic[MEM_STS_BITS-1:0])) tcp_mem_wr_sts [N_TCP_CHANNELS] (.aclk(nclk), .aresetn(nresetn_r));
 AXI4S #(.AXI4S_DATA_BITS(AXI_DDR_BITS)) axis_tcp_mem_rd [N_TCP_CHANNELS] (.aclk(nclk), .aresetn(nresetn_r));
 AXI4S #(.AXI4S_DATA_BITS(AXI_DDR_BITS)) axis_tcp_mem_wr [N_TCP_CHANNELS] (.aclk(nclk), .aresetn(nresetn_r));
-
 
 // IP and MAC
 // ---------------------------------------------------------------------------------------------
@@ -294,8 +296,7 @@ end
 assign s_set_ip_addr.ready = 1'b1;
 assign s_set_mac_addr.ready = 1'b1;
 
-// VIOs only available on UltraScale+ platforms
-`ifndef NET_DCMAC
+`ifdef FPGA_ARCH_ULTRASCALE_PLUS
 vio_ip inst_vio_ip (
     .clk(nclk),
     .probe_in0(local_ip_address), // 32
@@ -649,7 +650,6 @@ mac_ip_encode_ip mac_ip_encode_inst (
 axis_reg_array inst_reg_slice_mie_ic (.aclk(nclk), .aresetn(nresetn_r), .s_axis(axis_mie_to_intercon), .m_axis(axis_mie_to_intercon_r));
 axis_reg_array inst_reg_slice_arp_r (.aclk(nclk), .aresetn(nresetn_r), .s_axis(axis_arp_to_arp_slice), .m_axis(axis_arp_to_arp_slice_r));
 
-
 // TX-channel: MUX-in the host TX-traffic if enabled 
 `ifdef EN_HOST_NETWORKING
 
@@ -744,7 +744,6 @@ axis_interconnect_512_2to1 mac_merger (
     .M00_AXIS_tlast(m_axis_net.tlast) // output M00_AXIS_TLAST
     //.S02_ARB_REQ_SUPPRESS(1'b0) // input S01_ARB_REQ_SUPPRESS
 
-
     `else
 
     .aclk(nclk), // input ACLK
@@ -793,7 +792,6 @@ axis_interconnect_512_2to1 mac_merger (
     .S01_AXIS_TKEEP(axis_mie_to_intercon_merged_r.tkeep), // input [7 : 0] S01_AXIS_TKEEP
     .S01_AXIS_TLAST(axis_mie_to_intercon_merged_r.tlast), // input S01_AXIS_TLAST
 
-
     .M00_AXIS_ACLK(nclk), // input M00_AXIS_ACLK
     .M00_AXIS_ARESETN(nresetn_r), // input M00_AXIS_ARESETN
     .M00_AXIS_TVALID(m_axis_net.tvalid), // output M00_AXIS_TVALID
@@ -803,7 +801,6 @@ axis_interconnect_512_2to1 mac_merger (
     .M00_AXIS_TLAST(m_axis_net.tlast), // output M00_AXIS_TLAST
     .S00_ARB_REQ_SUPPRESS(1'b0), // input S00_ARB_REQ_SUPPRESS
     .S01_ARB_REQ_SUPPRESS(1'b0) // input S01_ARB_REQ_SUPPRESS
-
 
     `else 
 
@@ -969,9 +966,13 @@ roce_stack inst_roce_stack (
     .psn_drop_pkg_count_valid(regInvalidPsnDropCount_valid),
     .psn_drop_pkg_count_data(regInvalidPsnDropCount),
     .retrans_count_valid(regRetransCount_valid),
-    .retrans_count_data(regRetransCount)
-);
+    .retrans_count_data(regRetransCount),
 
+    .psn_probe_w0(psn_probe_w0),
+    .psn_probe_w1(psn_probe_w1),
+    .psn_probe_w2(psn_probe_w2),
+    .psn_probe_w3(psn_probe_w3)
+);
 
 `endif
 
@@ -1050,6 +1051,8 @@ tcp_stack tcp_stack_inst(
     logic[31:0] tcp_rx_pkg_counter;
     logic[31:0] tcp_tx_pkg_counter;
 
+    logic[31:0] psn_probe_w0, psn_probe_w1, psn_probe_w2, psn_probe_w3;
+
     logic[31:0] roce_rx_pkg_counter;
     logic[31:0] roce_tx_pkg_counter;
     logic[31:0] roce_retrans_counter;
@@ -1063,10 +1066,17 @@ tcp_stack tcp_stack_inst(
     assign net_stats_tmp[0].tx_pkg_counter = tx_pkg_counter;
     assign net_stats_tmp[0].arp_rx_pkg_counter = arp_rx_pkg_counter;
     assign net_stats_tmp[0].arp_tx_pkg_counter = arp_tx_pkg_counter;
+`ifdef EN_TCP
     assign net_stats_tmp[0].icmp_rx_pkg_counter = icmp_rx_pkg_counter;
     assign net_stats_tmp[0].icmp_tx_pkg_counter = icmp_tx_pkg_counter;
     assign net_stats_tmp[0].tcp_rx_pkg_counter = tcp_rx_pkg_counter;
     assign net_stats_tmp[0].tcp_tx_pkg_counter = tcp_tx_pkg_counter;
+`else
+    assign net_stats_tmp[0].icmp_rx_pkg_counter = psn_probe_w2;
+    assign net_stats_tmp[0].icmp_tx_pkg_counter = psn_probe_w3;
+    assign net_stats_tmp[0].tcp_rx_pkg_counter  = psn_probe_w0;
+    assign net_stats_tmp[0].tcp_tx_pkg_counter  = psn_probe_w1;
+`endif
     assign net_stats_tmp[0].roce_rx_pkg_counter = roce_rx_pkg_counter;
     assign net_stats_tmp[0].roce_tx_pkg_counter = roce_tx_pkg_counter;
     assign net_stats_tmp[0].ibv_rx_pkg_counter = regIbvRxPkgCount;

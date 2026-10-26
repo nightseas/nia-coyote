@@ -234,8 +234,10 @@ proc cr_bd_design_ctrl { parentCell } {
     ($cnfg(en_uclk) == 0 || ($cnfg(en_uclk) == 1 && $cnfg(uclk_f) == $cnfg(sclk_f)))
   }]
 
+  set aclk_from_xclk [expr {$cnfg(aclk_f) == $cnfg(sclk_f) && $cnfg(en_pr) == 0}]
+
   set axi_interconnect_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 axi_interconnect_0 ]
-  set num_clks [expr {$use_single_clk ? 1 : 2}]
+  set num_clks [expr {($use_single_clk || $aclk_from_xclk) ? 1 : 2}]
   set cmd "set_property -dict \[list \
     CONFIG.NUM_CLKS {$num_clks} \
     CONFIG.NUM_MI {$ic0_mi} \
@@ -327,11 +329,16 @@ proc cr_bd_design_ctrl { parentCell } {
     connect_bd_net [get_bd_ports xclk] [get_bd_pins clk_wiz_0/clk_in1]
     connect_bd_net [get_bd_ports sys_reset] [get_bd_pins clk_wiz_0/reset]
     connect_bd_net [get_bd_ports lckresetn] [get_bd_pins clk_wiz_0/locked]
-    connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_ports aclk]
-    connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins axi_interconnect_0/aclk1]
+    if {$aclk_from_xclk} {
+      connect_bd_net [get_bd_ports xclk] [get_bd_ports aclk]
+      connect_bd_net [get_bd_ports xclk] [get_bd_pins proc_sys_reset_a/slowest_sync_clk]
+    } else {
+      connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_ports aclk]
+      connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins axi_interconnect_0/aclk1]
+      connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins proc_sys_reset_a/slowest_sync_clk]
+    }
     connect_bd_net [get_bd_pins clk_wiz_0/clk_out2] [get_bd_ports nclk]
     connect_bd_net [get_bd_pins clk_wiz_0/clk_out3] [get_bd_ports uclk]
-    connect_bd_net [get_bd_pins clk_wiz_0/clk_out1] [get_bd_pins proc_sys_reset_a/slowest_sync_clk]
     connect_bd_net [get_bd_pins clk_wiz_0/clk_out2] [get_bd_pins proc_sys_reset_n/slowest_sync_clk]
     connect_bd_net [get_bd_pins clk_wiz_0/clk_out3] [get_bd_pins proc_sys_reset_u/slowest_sync_clk]
   }

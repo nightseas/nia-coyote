@@ -161,8 +161,32 @@ logic n_clk;
 AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_n_clk_rx_data (.aclk(n_clk), .aresetn(n_resetn));
 AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_n_clk_tx_data (.aclk(n_clk), .aresetn(n_resetn));
 
+logic [63:0] seam_rx_stat;
 
 `ifdef NET_DCMAC
+
+`ifdef NET_NIA_ETH_200G
+
+network_module_nia_eth_200g inst_network_module (
+    .aclk(n_clk),
+    .aresetn(n_resetn),
+
+    .gt_refclk_p(gt_refclk_p),
+    .gt_refclk_n(gt_refclk_n),
+
+    .gt_rxp_in(gt_rxp_in),
+    .gt_rxn_in(gt_rxn_in),
+    .gt_txp_out(gt_txp_out),
+    .gt_txn_out(gt_txn_out),
+
+    .m_axis_net_rx(axis_n_clk_rx_data),
+    .s_axis_net_tx(axis_n_clk_tx_data),
+
+    .stat_clk(aclk),
+    .m_seam_rx_stat(seam_rx_stat)
+);
+
+`else
 
 network_module_dcmac inst_network_module (
     // Clock, reset
@@ -182,6 +206,10 @@ network_module_dcmac inst_network_module (
     .m_axis_net_rx(axis_n_clk_rx_data),
     .s_axis_net_tx(axis_n_clk_tx_data)
 ); 
+
+assign seam_rx_stat = 64'd0;
+
+`endif
 
 `else 
 
@@ -227,6 +255,8 @@ network_ccross_early #(
     .m_axis_nclk(axis_n_clk_rx_data)
 ); 
 
+assign seam_rx_stat = 64'd0;
+
 `endif
 
 /**
@@ -243,6 +273,7 @@ metaIntf #(.STYPE(logic[ARP_LUP_REQ_BITS-1:0])) arp_lookup_request_aclk_slice (.
 metaIntf #(.STYPE(logic[IP_ADDR_BITS-1:0])) set_ip_addr_aclk_slice (.*);
 metaIntf #(.STYPE(logic[MAC_ADDR_BITS-1:0])) set_mac_addr_aclk_slice (.*);
 net_stat_t net_stats_aclk_slice;
+net_stat_t net_stats_aclk_seam;
 
 // RDMA
 metaIntf #(.STYPE(rdma_qp_ctx_t)) rdma_qp_interface_n_clk (.aclk(n_clk), .aresetn(n_resetn));
@@ -437,6 +468,14 @@ network_ccross_late #(
 );
 
 // Slicing
+`ifdef EN_STATS
+always_comb begin
+    net_stats_aclk_seam = net_stats_aclk_slice;
+    net_stats_aclk_seam.icmp_rx_pkg_counter = seam_rx_stat[31:0];
+    net_stats_aclk_seam.icmp_tx_pkg_counter = seam_rx_stat[63:32];
+end
+`endif
+
 network_slice_array #(
     .N_STAGES(N_REG_NET_S0)  
 ) inst_network_slice_array (
@@ -445,7 +484,7 @@ network_slice_array #(
     .m_set_ip_addr_n(set_ip_addr_aclk_slice),
     .m_set_mac_addr_n(set_mac_addr_aclk_slice),
 `ifdef EN_STATS
-    .s_net_stats_n(net_stats_aclk_slice),
+    .s_net_stats_n(net_stats_aclk_seam),
 `endif
     
     // User
@@ -584,8 +623,10 @@ network_slice_array #(
     net_mem_intf #(
     `ifdef NET_DCMAC
         .ENABLE(0),
-    `else
+    `elsif EN_MEM
         .ENABLE(1),
+    `else
+        .ENABLE(0),
     `endif
         .UNALIGNED(1)
     ) inst_rdma_mem_intf_0 (
@@ -743,6 +784,5 @@ network_slice_array #(
     axi_reg_array #(.N_STAGES(N_REG_NET_S0)) inst_ddr_tcp_reg (.aclk(aclk), .aresetn(aresetn), .s_axi(axi_tcp_ddr_slice), .m_axi(m_axi_tcp_ddr));
 
 `endif
-
 
 endmodule

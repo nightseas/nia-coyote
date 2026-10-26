@@ -68,6 +68,12 @@ if {$cfg(build_static) eq 1} {
 }
 add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/shell/impl"
 add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/dynamic/impl"
+if {$cfg(en_net) eq 1 && [file isdirectory "$hw_dir/constraints/$cfg(fdev)/network/impl"]} {
+    add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/network/impl"
+}
+if {$cfg(fdev) eq "vp1552" && $cfg(en_net) eq 1 && $cfg(dcmac_phy) eq "dcmac"} {
+    add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/dcmac"
+}
 
 # Shell
 add_files "$dcp_dir/shell/shell_synthed.dcp"
@@ -87,6 +93,21 @@ if {$cfg(en_shell_pblock) eq 1} {
     link_design -mode default -part $part -top cyt_top
 }
 write_checkpoint -force "$dcp_dir/shell_linked.dcp"
+
+set postlink_dir "$hw_dir/constraints/$cfg(fdev)/postlink"
+if {[file isdirectory $postlink_dir]} {
+    set postlink_scripts [lsort [glob -nocomplain -directory $postlink_dir *.tcl]]
+    puts "POSTLINK scripts [llength $postlink_scripts] in $postlink_dir"
+    foreach postlink_script $postlink_scripts {
+        puts "POSTLINK sourcing [file tail $postlink_script]"
+        source $postlink_script -notrace
+        puts "POSTLINK sourced [file tail $postlink_script]"
+    }
+    if {[llength $postlink_scripts] > 0} {
+        write_checkpoint -force "$dcp_dir/shell_linked.dcp"
+        puts "POSTLINK checkpoint rewritten with [llength $postlink_scripts] script(s) applied"
+    }
+}
 
 #########################################################################################################
 # LINKING DONE

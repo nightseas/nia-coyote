@@ -51,8 +51,12 @@ module net_mem_intf #(
     AXI4.m                              m_axi_mem
 );
 
-assign m_axi_awlock = 0;
-assign m_axi_arlock = 0;
+assign m_axi_mem.awlock   = 1'b0;
+assign m_axi_mem.awqos    = 4'h0;
+assign m_axi_mem.awregion = 4'h0;
+assign m_axi_mem.arlock   = 1'b0;
+assign m_axi_mem.arqos    = 4'h0;
+assign m_axi_mem.arregion = 4'h0;
 
 reg [63:0]  addr_offset_reg;
 
@@ -326,9 +330,9 @@ axi_datamover_mem datamover_mem (
 else begin
     assign s_mem_rd_cmd.ready = 1'b1;
     //assign axis_mem_dm_to_cc_read_tvalid = 1'b0;
-    assign m_mem_rd_sts.valid = 1'b0;
+    always_comb m_mem_rd_sts.tie_off_m();
     assign s_mem_wr_cmd.ready = 1'b1;
-    assign m_mem_wr_sts.valid = 1'b0;
+    always_comb m_mem_wr_sts.tie_off_m();
     always_comb m_axi_mem.tie_off_m();
     //assign axis_mem_cc_to_dm_write_tready = 1'b1;
 end

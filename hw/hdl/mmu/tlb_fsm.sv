@@ -127,6 +127,7 @@ logic [4:0] state_C, state_N;
 logic [LEN_BITS-1:0] len_C, len_N;
 logic [VADDR_BITS-1:0] vaddr_C, vaddr_N;
 logic last_C, last_N;
+logic [BEAT_LOG_BITS-1:0] soff_C, soff_N;
 logic [STRM_BITS-1:0] strm_C, strm_N;
 logic [DEST_BITS-1:0] dest_C, dest_N;
 logic [PID_BITS-1:0] pid_C, pid_N;
@@ -263,6 +264,7 @@ always_ff @(posedge aclk) begin: PROC_REG
         len_C <= 'X;
         vaddr_C <= 'X;
         last_C <= 'X;
+        soff_C <= 0;
         strm_C <= 'X;
         host_C <= 'X;
         dest_C <= 'X;
@@ -312,6 +314,7 @@ always_ff @(posedge aclk) begin: PROC_REG
         len_C <= len_N;
         vaddr_C <= vaddr_N;
         last_C <= last_N;
+        soff_C <= soff_N;
         strm_C <= strm_N;
         host_C <= host_N;
         dest_C <= dest_N;
@@ -625,6 +628,7 @@ always_comb begin: DP
     len_N = len_C;
 	vaddr_N = vaddr_C;
 	last_N = last_C;
+	soff_N = soff_C;
 	strm_N = strm_C;
     host_N = host_C;
 	dest_N = dest_C;
@@ -725,6 +729,8 @@ always_comb begin: DP
 	hdma_req.len = plen_C;
 	hdma_req.last = !len_C && last_C;
 	hdma_req.rsrvd = 0;
+	hdma_req.cmd_last = !len_C;
+	hdma_req.offs = soff_C;
 	hdma_valid = 1'b0;
 `endif 
 
@@ -756,6 +762,8 @@ always_comb begin: DP
         ddma_req[i].len = plen_C;
         ddma_req[i].last = !len_C && last_C;
         ddma_req[i].rsrvd = 0;
+        ddma_req[i].cmd_last = !len_C;
+        ddma_req[i].offs = 0;
         ddma_valid[i] = 1'b0;
     end
 `endif 
@@ -797,6 +805,7 @@ always_comb begin: DP
 					pid_N = cch_buff_src.data.pid;
 					dest_N = cch_buff_src.data.dest;
 					last_N = cch_buff_src.data.last;
+					soff_N = 0;
                     host_N = cch_buff_src.data.host;
             `ifdef EN_STRM
                 `ifdef EN_MEM
@@ -825,6 +834,7 @@ always_comb begin: DP
 					pid_N = s_req.data.pid;
 					dest_N = s_req.data.dest;
 					last_N = s_req.data.last;
+					soff_N = 0;
                     host_N = s_req.data.host;
 			`ifdef EN_STRM
                 `ifdef EN_MEM
@@ -999,6 +1009,7 @@ always_comb begin: DP
                 head_host_N = head_host_C + 1;
                 issued_host_N = 1'b1;
                 val_N = len_C;
+                soff_N = soff_C + plen_C[BEAT_LOG_BITS-1:0];
             end
             req_host_in_we = ~0;
 		end

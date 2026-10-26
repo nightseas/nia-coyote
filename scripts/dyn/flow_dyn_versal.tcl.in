@@ -71,6 +71,12 @@ if {[package vcompare $vivado_ver "2024.2"] >= 0} {
 # Shell checkpoint & constraints
 add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/shell/impl"
 add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/dynamic/impl"
+if {$cfg(en_net) eq 1 && [file isdirectory "$hw_dir/constraints/$cfg(fdev)/network/impl"]} {
+    add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/network/impl"
+}
+if {$cfg(fdev) eq "vp1552" && $cfg(en_net) eq 1 && $cfg(dcmac_phy) eq "dcmac"} {
+    add_files -fileset [get_filesets constrs_1] "$hw_dir/constraints/$cfg(fdev)/dcmac"
+}
 add_files "$dcp_dir/shell/shell_synthed.dcp"
 set_property SCOPED_TO_CELLS {inst_shell} [get_files "$dcp_dir/shell/shell_synthed.dcp"]
 

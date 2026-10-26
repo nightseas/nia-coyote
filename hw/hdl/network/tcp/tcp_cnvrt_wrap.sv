@@ -30,7 +30,6 @@
 `include "lynx_macros.svh"
 
 import lynxTypes::*;
-import bftTypes::*;
 
 /**
  * User logic
@@ -97,7 +96,6 @@ assign tcp_notify_TDATA[127:81] = 0;
 
 assign tcp_notify_TVALID = tcp_0_notify.valid;
 assign tcp_0_notify.ready = tcp_notify_TREADY;
-
 
 wire [15:0]tcp_rx_meta_TDATA;
 wire tcp_rx_meta_TREADY;

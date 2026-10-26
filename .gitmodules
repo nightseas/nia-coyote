@@ -1,4 +1,8 @@
 [submodule "hw/services/network"]
 	path = hw/services/network
-	url = https://github.com/fpgasystems/fpga-network-stack.git
-	branch = coyote-TCP-RDMA
+	url = https://github.com/nightseas/fpga-network-stack.git
+	branch = nia/rdma-v0.1.0
+[submodule "deps/nia-eth"]
+	path = deps/nia-eth
+	url = https://github.com/nightseas/nia-eth.git
+	branch = nia/coyote-200g

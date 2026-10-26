@@ -30,6 +30,21 @@ struct hlist_head hpid_ctid_map[MAX_FPGA_DEVICES][MAX_N_REGIONS][1 << (PID_HASH_
     };
 #endif 
 
+static void vfpga_free_ctid_chunk(struct vfpga_dev *device, int32_t ctid) {
+    struct chunk *c = &device->ctid_chunks[ctid];
+
+    c->used = false;
+    c->next = NULL;
+
+    if (device->pid_alloc_tail) {
+        device->pid_alloc_tail->next = c;
+    } else {
+        device->pid_alloc = c;
+    }
+    device->pid_alloc_tail = c;
+    device->num_free_ctid_chunks++;
+}
+
 int vfpga_dev_open(struct inode *inode, struct file *file) {
     // Parse inode arg into vfpga_dev struct and check it's non-null (BUG_ON)
     int minor = iminor(inode);
@@ -69,8 +84,7 @@ int vfpga_dev_release(struct inode *inode, struct file *file) {
                     tlb_put_user_pages_ctid(device, l_entry->ctid, tmp_h_entry->hpid, 1);
 
                 // Unregister Coyote thread (if registered)
-                device->ctid_chunks[l_entry->ctid].next = device->pid_alloc;
-                device->pid_alloc = &device->ctid_chunks[l_entry->ctid];
+                vfpga_free_ctid_chunk(device, l_entry->ctid);
 
                 // Delete entry
                 list_del(&l_entry->list); 
@@ -131,7 +145,7 @@ long vfpga_dev_ioctl_impl(struct vfpga_dev *device, unsigned int command, unsign
                 pid_t hpid = (pid_t) tmp[0];
 
                 // Check if a new Coyote thread can be registered
-                if (device->num_free_ctid_chunks == 0) {
+                if (device->num_free_ctid_chunks == 0 || !device->pid_alloc) {
                     dbg_info("no free ctid chunks left for hpid %d, spid %d\n", hpid, spid);
                     mutex_unlock(&device->pid_lock);
                     return -ENOMEM;
@@ -139,7 +153,12 @@ long vfpga_dev_ioctl_impl(struct vfpga_dev *device, unsigned int command, unsign
 
                 int32_t ctid = (int32_t) device->pid_alloc->id;
                 device->pid_array[device->pid_alloc->id] = hpid;
+                device->pid_alloc->used = true;
+                if (device->pid_alloc_tail == device->pid_alloc) {
+                    device->pid_alloc_tail = NULL;
+                }
                 device->pid_alloc = device->pid_alloc->next;
+                device->num_free_ctid_chunks--;
                 
                 // If the hpid has not been already stored to the map, store it now
                 bool hpid_found = false;
@@ -236,8 +255,7 @@ long vfpga_dev_ioctl_impl(struct vfpga_dev *device, unsigned int command, unsign
                                     tlb_put_user_pages_ctid(device, ctid, hpid, 1);
 
                                 // Unregister Coyote thread and delete entry from list
-                                device->ctid_chunks[l_entry->ctid].next = device->pid_alloc;
-                                device->pid_alloc = &device->ctid_chunks[l_entry->ctid];
+                                vfpga_free_ctid_chunk(device, l_entry->ctid);
                                 list_del(&l_entry->list);   
                             }
                         }

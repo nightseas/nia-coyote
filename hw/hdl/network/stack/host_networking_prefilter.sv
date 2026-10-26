@@ -63,14 +63,17 @@ module host_networking_prefilter (
 
     // Signals for dropping packets 
     logic rx_filter_dropping; 
-    logic rx_filter_dropped; 
     logic rx_pkt_first_chunk; 
     logic rx_pkt_further_chunks; 
 
+    logic rx_route_host;
+    logic rx_route_offloaded;
+    logic rx_route_host_held;
+    logic rx_route_offloaded_held;
+    logic rx_host_chunk_taken;
+    logic rx_offloaded_chunk_taken;
 
-
-    // Check signal if the current chunk is the first one within a packet 
-    assign rx_pkt_first_chunk = s_axis_rx.tvalid && s_axis_rx.tready && ~rx_pkt_further_chunks; 
+    assign rx_pkt_first_chunk = s_axis_rx.tvalid && ~rx_pkt_further_chunks; 
 
     // Small FSM to determine current chunk in the packet 
     always_ff @(posedge nclk) begin 
@@ -121,36 +124,56 @@ module host_networking_prefilter (
         `endif 
     `endif 
 
-    // FSM to keep the dropped flag until the end of the packet stream
-    always_ff @(posedge nclk) begin 
-        if(!nresetn) begin 
-            rx_filter_dropped <= 1'b0; 
-        end else begin 
-            if(s_axis_rx.tvalid && s_axis_rx.tready) begin 
-                // If tlast is reached, we can disable the dropped flag 
-                if(s_axis_rx.tlast) begin 
-                    rx_filter_dropped <= 1'b0; 
-                end else if(rx_filter_dropping) begin 
-                    // If we're in the first packet and decide to drop it, we set this flag for the rest of the packet stream 
-                    rx_filter_dropped <= 1'b1;
-                end 
-            end 
-        end 
-    end 
+    assign rx_route_host = rx_pkt_first_chunk ? !rx_filter_dropping : rx_route_host_held;
+    assign rx_route_offloaded = rx_pkt_first_chunk ? (rx_filter_dropping || rx_arp)
+                                                  : rx_route_offloaded_held;
 
-    // Assigning the output stream 
-    assign m_axis_rx.tvalid = s_axis_rx.tvalid && !(rx_filter_dropping || rx_filter_dropped);
+    always_ff @(posedge nclk) begin
+        if(!nresetn) begin
+            rx_route_host_held <= 1'b1;
+            rx_route_offloaded_held <= 1'b0;
+        end else begin
+            if(s_axis_rx.tvalid && s_axis_rx.tready) begin
+                if(s_axis_rx.tlast) begin
+                    rx_route_host_held <= 1'b1;
+                    rx_route_offloaded_held <= 1'b0;
+                end else if(rx_pkt_first_chunk) begin
+                    rx_route_host_held <= rx_route_host;
+                    rx_route_offloaded_held <= rx_route_offloaded;
+                end
+            end
+        end
+    end
+
+    always_ff @(posedge nclk) begin
+        if(!nresetn) begin
+            rx_host_chunk_taken <= 1'b0;
+            rx_offloaded_chunk_taken <= 1'b0;
+        end else begin
+            if(s_axis_rx.tvalid && s_axis_rx.tready) begin
+                rx_host_chunk_taken <= 1'b0;
+                rx_offloaded_chunk_taken <= 1'b0;
+            end else begin
+                if(m_axis_rx.tvalid && m_axis_rx.tready) rx_host_chunk_taken <= 1'b1;
+                if(m_axis_offloaded_rx.tvalid && m_axis_offloaded_rx.tready)
+                    rx_offloaded_chunk_taken <= 1'b1;
+            end
+        end
+    end
+
+    assign m_axis_rx.tvalid = s_axis_rx.tvalid && rx_route_host && !rx_host_chunk_taken;
     assign m_axis_rx.tdata = s_axis_rx.tdata;
     assign m_axis_rx.tkeep = s_axis_rx.tkeep;
     assign m_axis_rx.tlast = s_axis_rx.tlast;
 
-    // Also ARPs are handed to the offloaded Hardware in this case... 
-    assign m_axis_offloaded_rx.tvalid = s_axis_rx.tvalid && (rx_filter_dropping || rx_filter_dropped || rx_arp);
+    assign m_axis_offloaded_rx.tvalid = s_axis_rx.tvalid && rx_route_offloaded
+                                        && !rx_offloaded_chunk_taken;
     assign m_axis_offloaded_rx.tdata = s_axis_rx.tdata;
     assign m_axis_offloaded_rx.tkeep = s_axis_rx.tkeep;
     assign m_axis_offloaded_rx.tlast = s_axis_rx.tlast;
 
-    // Input ready only if both output streams are ready
-    assign s_axis_rx.tready = m_axis_rx.tready && m_axis_offloaded_rx.tready;
+    assign s_axis_rx.tready = (!rx_route_host || rx_host_chunk_taken || m_axis_rx.tready)
+                              && (!rx_route_offloaded || rx_offloaded_chunk_taken
+                                  || m_axis_offloaded_rx.tready);
 
 endmodule 

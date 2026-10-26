@@ -88,9 +88,11 @@ AXI4S #(.AXI4S_DATA_BITS(AXI_NET_BITS)) axis_tx_padding_to_fifo (.aclk(rclk), .a
 axis_reg_array #(.N_STAGES(2)) inst_reg_rx (.aclk(rclk), .aresetn(rresetn), .s_axis(rx_axis_cmac), .m_axis(rx_axis));
 axis_reg_array #(.N_STAGES(2)) inst_reg_tx (.aclk(rclk), .aresetn(rresetn), .s_axis(tx_axis), .m_axis(tx_axis_cmac));
 
-
-// CMAC
+`ifdef FPGA_ARCH_VERSAL
+dcmac_axis_wrapper cmac_wrapper_inst (
+`else
 cmac_axis_wrapper cmac_wrapper_inst (
+`endif
     .init_clk(init_clk),
     .sys_reset(sys_reset),
 

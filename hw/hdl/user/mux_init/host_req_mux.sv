@@ -96,8 +96,9 @@ always_comb begin
             host_local_rd_int.valid = ~remote_strm_1;
         end
         else if(host_sq_int.data.req_2.actv) begin
-            host_sq_int.ready = remote_strm_2 ? (host_remote_wr_int.ready & host_local_rd_int.ready) : (host_local_wr_int.ready);
-            
+            host_sq_int.ready = remote_strm_2 ? ((host_remote_wr_int.ready | remote_wr_picked_up) &
+                                                 (host_local_rd_int.ready | local_rd_picked_up)) : (host_local_wr_int.ready);
+
             host_remote_wr_int.valid = remote_strm_2 & !remote_wr_picked_up;
             host_local_rd_int.valid = remote_strm_2 & !local_rd_picked_up;
             host_local_wr_int.valid = ~remote_strm_2;
@@ -107,27 +108,29 @@ end
 
 logic remote_wr_picked_up; 
 logic local_rd_picked_up; 
+logic req_2_remote_active;
+logic req_2_remote_released;
+
+always_comb begin
+    req_2_remote_active = host_sq_int.valid & host_sq_int.data.req_2.actv &
+                          ~host_sq_int.data.req_1.actv & remote_strm_2;
+    req_2_remote_released = req_2_remote_active & host_sq_int.ready;
+end
+
 always_ff @ (posedge aclk) begin 
     if(!aresetn) begin
-        // Basic case: We assume both signals have been picked up
         remote_wr_picked_up <= 0; 
         local_rd_picked_up <= 0; 
-    end else begin 
-        // Check for the right case of a local_rd & remote_wr double-action 
-        if(host_sq_int.valid && host_sq_int.data.req_2.actv && remote_strm_2) begin 
-            // In case of synchronicity: Both ready-signals are up, signals where picked up, don't change any settings here:
-            if(host_remote_wr_int.ready && host_local_rd_int.ready) begin 
-                // Keep signals as they are - in such a case, we don't need to take care specifically
-                remote_wr_picked_up <= 0; 
-                local_rd_picked_up <= 0;
-            end else if(host_remote_wr_int.ready && !host_local_rd_int.ready) begin 
-                // Means: Signal has been picked up!
-                remote_wr_picked_up <= 1; 
-            end else if(!host_remote_wr_int.ready && host_local_rd_int.ready) begin
-                // Signal has been picked up! 
-                local_rd_picked_up <= 1; 
-            end 
-        end 
+    end else if(req_2_remote_released) begin
+        remote_wr_picked_up <= 0;
+        local_rd_picked_up <= 0;
+    end else if(req_2_remote_active) begin
+        if(host_remote_wr_int.valid && host_remote_wr_int.ready) begin
+            remote_wr_picked_up <= 1;
+        end
+        if(host_local_rd_int.valid && host_local_rd_int.ready) begin
+            local_rd_picked_up <= 1;
+        end
     end 
 end 
 

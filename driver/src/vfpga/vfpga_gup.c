@@ -28,6 +28,21 @@ int mmu_handler_gup(struct vfpga_dev *device, uint64_t vaddr, uint64_t len, int3
     int ret_val = 0;
     struct user_pages *user_pg;
     struct bus_driver_data *bd_data = device->bd_data;
+    struct tlb_metadata *regular_meta = bd_data->stlb_meta;
+
+    struct pf_aligned_desc kernel_desc;
+    kernel_desc.vaddr = (vaddr & regular_meta->page_mask) >> regular_meta->page_shift;
+    kernel_desc.n_pages = (((vaddr + len - 1) & regular_meta->page_mask) >> regular_meta->page_shift)
+                          - kernel_desc.vaddr + 1;
+    kernel_desc.ctid = ctid;
+    kernel_desc.hugepages = 0;
+
+    user_pg = map_present(device, &kernel_desc);
+    if (user_pg && user_pg->kernel_owned && user_pg->host == HOST_ACCESS && stream == HOST_ACCESS) {
+        dbg_info("kernel buffer mapping present, updating TLB without a host process\n");
+        tlb_map_gup(device, &kernel_desc, user_pg, hpid);
+        return 0;
+    }
 
     // Find context (host process ID)
     struct task_struct *curr_task = pid_task(find_vpid(hpid), PIDTYPE_PID);
@@ -314,19 +329,45 @@ void tlb_get_kernel_buffers(struct vfpga_dev *device, uint64_t vaddr, uint64_t p
     user_pg->n_pages = n_pages;
     user_pg->ctid = ctid;
     user_pg->huge = false;
+    user_pg->kernel_owned = true;
     user_pg->host = HOST_ACCESS;
     
     hash_add(user_buff_map[device->bd_data->dev_id][device->id][ctid], &user_pg->entry, vaddr);
 }
 
+void tlb_put_kernel_buffers(struct vfpga_dev *device, int32_t ctid) {
+    struct user_pages *tmp_entry;
+    struct hlist_node *tmp_next;
+    int bkt;
+    int released = 0;
+
+    hash_for_each_safe(user_buff_map[device->bd_data->dev_id][device->id][ctid], bkt, tmp_next, tmp_entry, entry) {
+        if (!tmp_entry->kernel_owned) {
+            continue;
+        }
+
+        tlb_unmap_gup(device, tmp_entry, 0);
+        hash_del(&tmp_entry->entry);
+        vfree(tmp_entry->hpages);
+        vfree(tmp_entry->pages);
+        kfree(tmp_entry);
+        released++;
+    }
+
+    dbg_info("released %d kernel owned buffers of ctid %d\n", released, ctid);
+}
+
 struct user_pages* tlb_get_user_pages(struct vfpga_dev *device, struct pf_aligned_desc *pf_desc, pid_t hpid, struct task_struct *curr_task, struct mm_struct *curr_mm, int32_t mem_block) {
     int ret_val = 0;
+    uint32_t n_pages_pinned = 0;
     int pg_inc, pg_size;
     struct bus_driver_data *bd_data = device->bd_data;
 
     // Error handling
     BUG_ON(!device);
     BUG_ON(!bd_data);
+    if (!curr_mm)
+        return NULL;
     if (pf_desc->vaddr + pf_desc->n_pages < pf_desc->vaddr)
         return NULL;
     if (pf_desc->n_pages == 0)
@@ -363,12 +404,21 @@ struct user_pages* tlb_get_user_pages(struct vfpga_dev *device, struct pf_aligne
     #else
         ret_val = get_user_pages_remote(curr_task, curr_mm, (unsigned long) pf_desc->vaddr << PAGE_SHIFT, pf_desc->n_pages, 1, user_pg->pages, NULL, NULL);
     #endif
-    dbg_info("pin_user_pages_remote(%llx, n_pages = %d, page start = %lx, hugepages = %d)\n", pf_desc->vaddr, pf_desc->n_pages, page_to_pfn(user_pg->pages[0]), pf_desc->hugepages);
+    if (ret_val < 0) {
+        pr_warn("user pages could not be pinned, vaddr %llx, n_pages %u, return %d\n",
+                pf_desc->vaddr, pf_desc->n_pages, ret_val);
+        n_pages_pinned = 0;
+        goto fail_host_alloc;
+    }
 
-    if (ret_val < pf_desc->n_pages) {
+    n_pages_pinned = ret_val;
+
+    if (n_pages_pinned < pf_desc->n_pages) {
         pr_warn("could not get all user pages, %d\n", ret_val);
         goto fail_host_alloc;
     }
+
+    dbg_info("pin_user_pages_remote(%llx, n_pages = %d, page start = %lx, hugepages = %d)\n", pf_desc->vaddr, pf_desc->n_pages, page_to_pfn(user_pg->pages[0]), pf_desc->hugepages);
 
     // Flush cache
     for (int i = 0; i < pf_desc->n_pages; i++) {
@@ -507,9 +557,11 @@ struct user_pages* tlb_get_user_pages(struct vfpga_dev *device, struct pf_aligne
 fail_host_alloc:
     // Unpin the pages
     #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
-        unpin_user_pages(user_pg->pages, ret_val);
+        if (n_pages_pinned > 0) {
+            unpin_user_pages(user_pg->pages, n_pages_pinned);
+        }
     #else
-        for(int i = 0; i < ret_val; i++) {
+        for(uint32_t i = 0; i < n_pages_pinned; i++) {
             put_page(user_pg->pages[i]);
         }
     #endif

@@ -214,39 +214,26 @@ logic sync_rsp;
 
 `ifdef EN_RDMA
 // Completion RDMA
-metaIntf #(.STYPE(ack_t)) rdma_done_rd (.*);
-metaIntf #(.STYPE(ack_t)) rdma_done_wr (.*);
-metaIntf #(.STYPE(ack_t)) rdma_done (.*);
-
 logic rdma_rd_C;
-logic [3:0] a_we_rdma_rd;
-logic [PID_BITS-1:0] a_addr_rdma_rd;
-logic [PID_BITS-1:0] b_addr_rdma_rd;
-logic [31:0] a_data_in_rdma_rd;
-logic [31:0] a_data_out_rdma_rd;
+logic [PID_BITS-1:0] rdma_done_rd_pid;
+logic [31:0] rdma_cnt_rd_next;
 logic [31:0] b_data_out_rdma_rd;
 logic rdma_clear_rd;
 logic [PID_BITS-1:0] rdma_clear_addr_rd;
 
 logic rdma_wr_C;
-logic [3:0] a_we_rdma_wr;
-logic [PID_BITS-1:0] a_addr_rdma_wr;
-logic [PID_BITS-1:0] b_addr_rdma_wr;
-logic [31:0] a_data_in_rdma_wr;
-logic [31:0] a_data_out_rdma_wr;
+logic [PID_BITS-1:0] rdma_done_wr_pid;
+logic [31:0] rdma_cnt_wr_next;
 logic [31:0] b_data_out_rdma_wr;
 logic rdma_clear_wr;
 logic [PID_BITS-1:0] rdma_clear_addr_wr;
 `endif
 
 `ifdef EN_TCP
-metaIntf #(.STYPE(tcp_listen_rsp_r_t) open_port_sts (.*);
-metaIntf #(.STYPE(tcp_open_rsp_r_t) open_port_sts (.*);
 
 logic [1:0] open_port_sts_response;
 logic [63:0] open_conn_sts_response;
 `endif
-
 
 // -- Def --------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------------------
@@ -751,7 +738,7 @@ always_ff @(posedge aclk) begin
                 TCP_OPEN_PORT_REG: // Open port command
                     for (int i = 0; i < AXIL_DATA_BITS/8; i++) begin
                         if(s_axi_ctrl.wstrb[i]) begin
-                            slv_reg[TCP_OPEN_PORT_CMD_REG][(i*8)+:8] <= s_axi_ctrl.wdata[(i*8)+:8];
+                            slv_reg[TCP_OPEN_PORT_REG][(i*8)+:8] <= s_axi_ctrl.wdata[(i*8)+:8];
                             m_open_port_cmd.valid <= 1'b1;
                         end
                     end
@@ -762,7 +749,7 @@ always_ff @(posedge aclk) begin
                 TCP_OPEN_CONN_REG: // Open conn command
                     for (int i = 0; i < AXIL_DATA_BITS/8; i++) begin
                         if(s_axi_ctrl.wstrb[i]) begin
-                            slv_reg[TCP_OPEN_CONN_CMD_REG][(i*8)+:8] <= s_axi_ctrl.wdata[(i*8)+:8];
+                            slv_reg[TCP_OPEN_CONN_REG][(i*8)+:8] <= s_axi_ctrl.wdata[(i*8)+:8];
                             m_open_conn_cmd.valid <= 1'b1;
                         end
                     end
@@ -902,7 +889,6 @@ always_ff @(posedge aclk) begin
         TCP_OPEN_CONN_STAT_REG:
             axi_rdata[1:0] <= open_port_sts_response[1:0];
 `endif 
-
 
         [STAT_DMA_REG:STAT_DMA_REG+(2**PID_BITS)-1]: begin
           axi_mux <= 1;
@@ -1278,98 +1264,33 @@ axis_data_fifo_req_128_used inst_sync_req_q (
 // ----------------------------------------------------------------------------------------
 `ifdef EN_RDMA
 
-// 
 // CQ
 //
-queue_stream #(.QTYPE(ack_t), .QDEPTH(8)) inst_cmplt_rdma_q (
-    .aclk(aclk), 
-    .aresetn(aresetn), 
-    .val_snk (s_rdma_done.valid),
-    .rdy_snk (),
-    .data_snk(s_rdma_done.data),
-    .val_src (rdma_done.valid),
-    .rdy_src (rdma_done.ready),
-    .data_src(rdma_done.data)
+rdma_cq_count #(
+    .QDEPTH(8)
+) inst_rdma_cq_count (
+    .aclk(aclk),
+    .aresetn(aresetn),
+    .s_rdma_done(s_rdma_done),
+    .clear_rd(rdma_clear_rd),
+    .clear_addr_rd(rdma_clear_addr_rd),
+    .clear_wr(rdma_clear_wr),
+    .clear_addr_wr(rdma_clear_addr_wr),
+    .stat_pid(axi_araddr[ADDR_LSB+:PID_BITS]),
+    .stat_cnt_rd(b_data_out_rdma_rd),
+    .stat_cnt_wr(b_data_out_rdma_wr),
+    .cnt_rd_hit(rdma_rd_C),
+    .cnt_rd_pid(rdma_done_rd_pid),
+    .cnt_rd_next(rdma_cnt_rd_next),
+    .cnt_wr_hit(rdma_wr_C),
+    .cnt_wr_pid(rdma_done_wr_pid),
+    .cnt_wr_next(rdma_cnt_wr_next)
 );
-assign s_rdma_done.ready = 1'b1;
 
-assign rdma_done_rd.data = rdma_done.data;
-assign rdma_done_rd.valid = is_opcode_rd_resp(rdma_done.data.opcode) ? rdma_done.valid : 1'b0;
-assign rdma_done_wr.data = rdma_done.data;
-assign rdma_done_wr.valid = is_opcode_rd_resp(rdma_done.data.opcode) ? 1'b0 : rdma_done.valid;
-assign rdma_done.ready = is_opcode_rd_resp(rdma_done.data.opcode) ? rdma_done_rd.ready : rdma_done_wr.ready;
-
-// RD
 assign rdma_clear_rd = post && slv_reg[CTRL_REG][CTRL_CLR_STAT];
 assign rdma_clear_addr_rd = slv_reg[CTRL_REG][CTRL_PID_OFFS+:PID_BITS];
-
-always_ff @(posedge aclk) begin
-    if(aresetn == 1'b0) begin
-        rdma_rd_C <= 1'b0; 
-    end
-    else begin
-        rdma_rd_C <= rdma_rd_C ? 1'b0 : (rdma_done_rd.valid ? 1'b1 : rdma_rd_C);
-    end
-end
-
-assign rdma_done_rd.ready = (rdma_rd_C && rdma_done_rd.valid);
-
-assign a_we_rdma_rd = (rdma_clear_rd || rdma_rd_C) ? ~0 : 0;
-assign a_data_in_rdma_rd = rdma_clear_rd ? 0 : a_data_out_rdma_wr + 1;
-assign a_addr_rdma_rd = rdma_clear_rd ? rdma_clear_addr_rd : rdma_done_rd.data.pid;
-assign b_addr_rdma_rd = axi_araddr[ADDR_LSB+:PID_BITS];
-
-ram_tp_nc #(
-    .ADDR_BITS(PID_BITS),
-    .DATA_BITS(32),
-    .DISTRIBUTED(1)
-) inst_rdma_ack_rd (
-    .clk(aclk),
-    .a_en(1'b1),
-    .a_we(a_we_rdma_rd),
-    .a_addr(a_addr_rdma_rd),
-    .b_en(1'b1),
-    .b_addr(b_addr_rdma_rd),
-    .a_data_in(a_data_in_rdma_rd),
-    .a_data_out(a_data_out_rdma_rd),
-    .b_data_out(b_data_out_rdma_rd)
-);
-
-// WR
 assign rdma_clear_wr = post && slv_reg[CTRL_REG_2][CTRL_CLR_STAT];
 assign rdma_clear_addr_wr = slv_reg[CTRL_REG_2][CTRL_PID_OFFS+:PID_BITS];
-
-always_ff @(posedge aclk) begin
-    if(aresetn == 1'b0) begin
-        rdma_wr_C <= 1'b0; 
-    end
-    else begin
-        rdma_wr_C <= rdma_wr_C ? 1'b0 : (rdma_done_wr.valid ? 1'b1 : rdma_wr_C);
-    end
-end
-
-assign rdma_done_wr.ready = (rdma_wr_C && rdma_done_wr.valid);
-
-assign a_we_rdma_wr = (rdma_clear_wr || rdma_wr_C) ? ~0 : 0;
-assign a_data_in_rdma_wr = rdma_clear_wr ? 0 : a_data_out_rdma_wr + 1;
-assign a_addr_rdma_wr = rdma_clear_wr ? rdma_clear_addr_wr : rdma_done_wr.data.pid;
-assign b_addr_rdma_wr = axi_araddr[ADDR_LSB+:PID_BITS];
-
-ram_tp_nc #(
-    .ADDR_BITS(PID_BITS),
-    .DATA_BITS(32),
-    .DISTRIBUTED(1)
-) inst_rdma_ack_wr (
-    .clk(aclk),
-    .a_en(1'b1),
-    .a_we(a_we_rdma_wr),
-    .a_addr(a_addr_rdma_wr),
-    .b_en(1'b1),
-    .b_addr(b_addr_rdma_wr),
-    .a_data_in(a_data_in_rdma_wr),
-    .a_data_out(a_data_out_rdma_wr),
-    .b_data_out(b_data_out_rdma_wr)
-);
 
 // RDMA qp interface
 assign m_rdma_qp_interface.data.new_state               = 0;
@@ -1446,14 +1367,14 @@ queue_meta #(.QDEPTH(8)) inst_meta_wback_wr (.aclk(aclk), .aresetn(aresetn), .s_
 
 `ifdef EN_RDMA
 assign wback[2].valid = rdma_clear_rd || rdma_rd_C;
-assign wback[2].data.paddr = rdma_clear_rd ? (rdma_clear_addr_rd << 2) + slv_reg[WBACK_RMT_RD_OFFS_REG][0+:PADDR_BITS] : (rdma_done_rd_src.data << 2) + slv_reg[WBACK_RMT_RD_OFFS_REG][0+:PADDR_BITS];
-assign wback[2].data.value = rdma_clear_rd ? 0 : a_data_out_rdma_rd + 1'b1;
+assign wback[2].data.paddr = rdma_clear_rd ? (rdma_clear_addr_rd << 2) + slv_reg[WBACK_RMT_RD_OFFS_REG][0+:PADDR_BITS] : (rdma_done_rd_pid << 2) + slv_reg[WBACK_RMT_RD_OFFS_REG][0+:PADDR_BITS];
+assign wback[2].data.value = rdma_clear_rd ? 0 : rdma_cnt_rd_next;
 assign wback[2].data.rsrvd = 0;
 queue_meta #(.QDEPTH(8)) inst_meta_wback_rdma_rd (.aclk(aclk), .aresetn(aresetn), .s_meta(wback[2]), .m_meta(wback_q[2]));
 
 assign wback[3].valid = rdma_clear_wr || rdma_wr_C;
-assign wback[3].data.paddr = rdma_clear_wr ? (rdma_clear_addr_wr << 2) + slv_reg[WBACK_RMT_WR_OFFS_REG][0+:PADDR_BITS] : (rdma_done_wr_src.data << 2) + slv_reg[WBACK_RMT_WR_OFFS_REG][0+:PADDR_BITS];
-assign wback[3].data.value = rdma_clear_wr ? 0 : a_data_out_rdma_wr + 1'b1;
+assign wback[3].data.paddr = rdma_clear_wr ? (rdma_clear_addr_wr << 2) + slv_reg[WBACK_RMT_WR_OFFS_REG][0+:PADDR_BITS] : (rdma_done_wr_pid << 2) + slv_reg[WBACK_RMT_WR_OFFS_REG][0+:PADDR_BITS];
+assign wback[3].data.value = rdma_clear_wr ? 0 : rdma_cnt_wr_next;
 assign wback[3].data.rsrvd = 0;
 queue_meta #(.QDEPTH(8)) inst_meta_wback_rdma_wr (.aclk(aclk), .aresetn(aresetn), .s_meta(wback[3]), .m_meta(wback_q[3]));
 `endif

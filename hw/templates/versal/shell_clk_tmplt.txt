@@ -5,3 +5,14 @@ create_clock -period {{ cnfg.sclk_p }} [get_ports xclk];
 
 # There should be no clock buffers when crossing PR boundaries (Vivado 73360)
 set_property CLOCK_BUFFER_TYPE NONE [get_ports xclk]
+
+{% if cnfg.fdev != 'v80' and (cnfg.fdev != 'vp1552' or (cnfg.en_net and cnfg.dcmac_phy != 'stub')) %}
+{% if cnfg.fdev == 'vp1552' %}
+create_clock -period 6.400 -name gt_ref_clk0_p -waveform {0.000 3.200} [get_ports gt0_refclk_p];
+{% else %}
+create_clock -period 6.206 [get_ports gt0_refclk_p];
+{% endif %}
+{% if cnfg.fdev != 'u50d' and cnfg.fdev != 'vp1552' %}
+create_clock -period 6.206 [get_ports gt1_refclk_p];
+{% endif %}
+{% endif %}

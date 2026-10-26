@@ -73,17 +73,18 @@ metaIntf #(.STYPE(req_t)) m_req_int (.*);
 always_ff @(posedge aclk) begin: PROC_REG
 if (aresetn == 1'b0) begin
 	state_C <= ST_IDLE;
-    
+
     cred_reg_C <= 0;
     cnt_C <= 'X;
     xfer_int <= 1'b0;
 end
-else
+else begin
     state_C <= state_N;
 
     cred_reg_C <= cred_reg_N;
     cnt_C <= cnt_N;
     xfer_int <= xfer;
+end
 end
 
 // -- NSL

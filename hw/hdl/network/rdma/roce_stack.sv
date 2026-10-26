@@ -79,7 +79,12 @@ module roce_stack (
     output logic                psn_drop_pkg_count_valid,
     output logic [31:0]         psn_drop_pkg_count_data,
     output logic                retrans_count_valid,
-    output logic [31:0]         retrans_count_data
+    output logic [31:0]         retrans_count_data,
+
+    output logic [31:0]         psn_probe_w0,
+    output logic [31:0]         psn_probe_w1,
+    output logic [31:0]         psn_probe_w2,
+    output logic [31:0]         psn_probe_w3
 );
 
 //
@@ -101,7 +106,9 @@ always_comb begin
     {16'h0000, rdma_sq.data.req_1.vaddr};
   rdma_sq_data[32+RDMA_QPN_BITS+2+OFFS_BITS+RDMA_VADDR_BITS+:RDMA_VADDR_BITS] = 
     {10'h000, rdma_sq.data.req_2.strm, rdma_sq.data.req_1.dest, rdma_sq.data.req_2.vaddr};
-  rdma_sq_data[32+RDMA_QPN_BITS+2+OFFS_BITS+2*RDMA_VADDR_BITS+:RDMA_LEN_BITS] = rdma_sq.data.req_1.len;
+  rdma_sq_data[32+RDMA_QPN_BITS+2+OFFS_BITS+2*RDMA_VADDR_BITS+:RDMA_LEN_BITS] =
+    (rdma_sq.data.req_1.opcode == RC_RDMA_WRITE_FIRST && rdma_sq.data.req_2.len != 0) ?
+      rdma_sq.data.req_2.len : rdma_sq.data.req_1.len;
   rdma_sq_data[32+RDMA_QPN_BITS+2+OFFS_BITS+2*RDMA_VADDR_BITS+RDMA_LEN_BITS+:RDMA_IMM_BITS] = {rdma_sq.data.req_2.offs[3:0], rdma_sq.data.req_2.len};
 end
 
@@ -195,7 +202,6 @@ ack_gap_enforcer inst_ack_gap_enforcer (
     .input_stream(fifo_to_gap_enforcer),
     .output_stream(gap_enforcer_to_hls)
 );
-
 
 // 
 // BUFF RQ
@@ -304,7 +310,6 @@ metaIntf #(.STYPE(logic[MEM_CMD_BITS-1:0])) rdma_mem_wr_cmd (.aclk(nclk), .arese
     end
 
 `endif 
-
 
 // Retransmission mux (buffering)
 rdma_mux_retrans inst_mux_retrans (
@@ -430,6 +435,17 @@ metaIntf #(.STYPE(logic[103:0])) m_axis_dbg_2 (.aclk(nclk), .aresetn(nresetn));
 assign m_axis_dbg_0.ready = 1'b1;
 assign m_axis_dbg_1.ready = 1'b1;
 assign m_axis_dbg_2.ready = 1'b1;
+
+nia_rdma_psn_probe inst_psn_probe (
+    .nclk(nclk),
+    .nresetn(nresetn),
+    .s_dbg_valid(m_axis_dbg_1.valid),
+    .s_dbg_data(m_axis_dbg_1.data),
+    .w0(psn_probe_w0),
+    .w1(psn_probe_w1),
+    .w2(psn_probe_w2),
+    .w3(psn_probe_w3)
+);
 
 rocev2_ip rocev2_inst(
     .ap_clk(nclk), // input aclk
@@ -601,6 +617,5 @@ rocev2_ip rocev2_inst(
 
 `endif
 );
-
 
 endmodule

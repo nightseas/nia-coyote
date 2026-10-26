@@ -77,6 +77,7 @@ DataWord stage_masking_masked_data;
 KeepWord stage_masking_keep; 
 logic stage_masking_last; 
 logic stage_crc_follow_up_word; 
+logic stage_input_first_word;
 CRCWord stage_masking_crc_seed; 
 
 // Regs for the CRC32-pipeline stages 
@@ -225,6 +226,7 @@ always_ff @(posedge nclk) begin
         stage_masking_keep <= 64'b0; 
         stage_masking_last <= 1'b0; 
         stage_crc_follow_up_word <= 1'b0; 
+        stage_input_first_word <= 1'b1;
         stage_masking_crc_seed <= 32'b0; 
 
         // Reset of the CRC32-pipeline stages in parallel 
@@ -312,8 +314,10 @@ always_ff @(posedge nclk) begin
 
             // If input is valid, load and mask data - else it's just 0s 
             if(m_axis_rx.tvalid) begin 
+                stage_input_first_word <= m_axis_rx.tlast;
+
                 // Only mask the first word (only one with Header Fields)
-                if(stage_crc_follow_up_word == 0) begin 
+                if(stage_input_first_word) begin 
                     stage_masking_masked_data <= m_axis_rx.tdata | bitmask; 
 
                     // Set the initial crc-value to debb20e3 (CRC of the imaginary leading GRH) and insert to the correct CRC-pipeline 

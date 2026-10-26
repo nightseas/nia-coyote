@@ -129,7 +129,7 @@ tcp_cnvrt_wrap inst_tcp_cnvrt (
 metaIntf #(.STYPE(tcp_meta_r_t)) rx_meta_r (.*);
 AXI4S axis_tcp_rx_conn (.*);
 
-metaIntf #(.STYPE(tcp_tx_meta_r_t)) tx_meta_r (.*);
+metaIntf #(.STYPE(tcp_meta_r_t)) tx_meta_r (.*);
 AXI4S axis_tcp_tx_conn (.*);
 
 tcp_conn_table inst_conn_table (

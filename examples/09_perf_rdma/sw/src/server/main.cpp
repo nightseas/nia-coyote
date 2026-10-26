@@ -78,13 +78,15 @@ int main(int argc, char *argv[])  {
     // CLI arguments
     bool operation;
     unsigned int min_size, max_size, n_runs;
+    unsigned int device;
 
     boost::program_options::options_description runtime_options("Coyote Perf RDMA Options");
     runtime_options.add_options()
         ("operation,o", boost::program_options::value<bool>(&operation)->default_value(false), "Benchmark operation: READ(0) or WRITE(1)")
         ("runs,r", boost::program_options::value<unsigned int>(&n_runs)->default_value(N_RUNS_DEFAULT), "Number of times to repeat the test")
         ("min_size,x", boost::program_options::value<unsigned int>(&min_size)->default_value(MIN_TRANSFER_SIZE_DEFAULT), "Starting (minimum) transfer size")
-        ("max_size,X", boost::program_options::value<unsigned int>(&max_size)->default_value(MAX_TRANSFER_SIZE_DEFAULT), "Ending (maximum) transfer size");
+        ("max_size,X", boost::program_options::value<unsigned int>(&max_size)->default_value(MAX_TRANSFER_SIZE_DEFAULT), "Ending (maximum) transfer size")
+        ("device,d", boost::program_options::value<unsigned int>(&device)->default_value(0), "Which FPGA to use (/dev/coyote_fpga_<device>_v0); a two-node test on ONE host needs 0 and 1");
     boost::program_options::variables_map command_line_arguments;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, runtime_options), command_line_arguments);
     boost::program_options::notify(command_line_arguments);
@@ -97,7 +99,7 @@ int main(int argc, char *argv[])  {
 
     // Allocate Coyothe threa and set-up RDMA connections, buffer etc.
     // initRDMA is explained in more detail in client/main.cpp
-    coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
+    coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid(), device);
     int *mem = (int *) coyote_thread.initRDMA(max_size, coyote::DEF_PORT);
     if (!mem) { throw std::runtime_error("Could not allocate memory; exiting..."); }
 

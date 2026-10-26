@@ -2,20 +2,15 @@
 ## CMAC wrapper
 ## 
 
-# VIOs are only created for UltraScale+ architectures, not for Versal. We may bring them back for the V80 later.
 if {$cfg(fpga_arch) eq "ultrascale_plus"} {
-    # VIO link
-    create_ip -name vio -vendor xilinx.com -library ip -version 3.0 -module_name vio_link
-    set_property -dict [list CONFIG.C_PROBE_IN1_WIDTH {4} CONFIG.C_NUM_PROBE_OUT {0} CONFIG.C_PROBE_IN2_WIDTH {3} CONFIG.C_NUM_PROBE_IN {3} ] [get_ips vio_link]
+create_ip -name vio -vendor xilinx.com -library ip -version 3.0 -module_name vio_link
+set_property -dict [list CONFIG.C_PROBE_IN1_WIDTH {4} CONFIG.C_NUM_PROBE_OUT {0} CONFIG.C_PROBE_IN2_WIDTH {3} CONFIG.C_NUM_PROBE_IN {3} ] [get_ips vio_link]
 
-    # VIO IP
-    create_ip -name vio -vendor xilinx.com -library ip -version 3.0 -module_name vio_ip
-    set_property -dict [list CONFIG.C_PROBE_IN1_WIDTH {48} CONFIG.C_PROBE_IN0_WIDTH {32} CONFIG.C_NUM_PROBE_OUT {0} CONFIG.C_NUM_PROBE_IN {2} ] [get_ips vio_ip]
+create_ip -name vio -vendor xilinx.com -library ip -version 3.0 -module_name vio_ip
+set_property -dict [list CONFIG.C_PROBE_IN1_WIDTH {48} CONFIG.C_PROBE_IN0_WIDTH {32} CONFIG.C_NUM_PROBE_OUT {0} CONFIG.C_NUM_PROBE_IN {2} ] [get_ips vio_ip]
 
-    # VIO nstats
-    create_ip -name vio -vendor xilinx.com -library ip -version 3.0 -module_name vio_shell_nstats
-    set_property -dict [list CONFIG.C_PROBE_IN14_WIDTH {16} CONFIG.C_PROBE_IN13_WIDTH {32} CONFIG.C_PROBE_IN12_WIDTH {32} CONFIG.C_PROBE_IN11_WIDTH {32} CONFIG.C_PROBE_IN10_WIDTH {32} CONFIG.C_PROBE_IN9_WIDTH {32} CONFIG.C_PROBE_IN8_WIDTH {32} CONFIG.C_PROBE_IN7_WIDTH {32} CONFIG.C_PROBE_IN6_WIDTH {32} CONFIG.C_PROBE_IN5_WIDTH {32} CONFIG.C_PROBE_IN4_WIDTH {32} CONFIG.C_PROBE_IN3_WIDTH {32} CONFIG.C_PROBE_IN2_WIDTH {32} CONFIG.C_PROBE_IN1_WIDTH {32} CONFIG.C_PROBE_IN0_WIDTH {32} CONFIG.C_NUM_PROBE_OUT {0} CONFIG.C_NUM_PROBE_IN {16} CONFIG.Component_Name {vio_shell_nstats}] [get_ips vio_shell_nstats]
-}
+create_ip -name vio -vendor xilinx.com -library ip -version 3.0 -module_name vio_shell_nstats
+set_property -dict [list CONFIG.C_PROBE_IN14_WIDTH {16} CONFIG.C_PROBE_IN13_WIDTH {32} CONFIG.C_PROBE_IN12_WIDTH {32} CONFIG.C_PROBE_IN11_WIDTH {32} CONFIG.C_PROBE_IN10_WIDTH {32} CONFIG.C_PROBE_IN9_WIDTH {32} CONFIG.C_PROBE_IN8_WIDTH {32} CONFIG.C_PROBE_IN7_WIDTH {32} CONFIG.C_PROBE_IN6_WIDTH {32} CONFIG.C_PROBE_IN5_WIDTH {32} CONFIG.C_PROBE_IN4_WIDTH {32} CONFIG.C_PROBE_IN3_WIDTH {32} CONFIG.C_PROBE_IN2_WIDTH {32} CONFIG.C_PROBE_IN1_WIDTH {32} CONFIG.C_PROBE_IN0_WIDTH {32} CONFIG.C_NUM_PROBE_OUT {0} CONFIG.C_NUM_PROBE_IN {16} CONFIG.Component_Name {vio_shell_nstats}] [get_ips vio_shell_nstats]
 
 # CMACs
 if {$cfg(fdev) eq "vcu118"} {
@@ -48,8 +43,6 @@ if {$cfg(fdev) eq "u55c"} {
         set_property -dict [list CONFIG.CMAC_CAUI4_MODE {1} CONFIG.ENABLE_PIPELINE_REG {1} CONFIG.NUM_LANES {4x25} CONFIG.GT_REF_CLK_FREQ {161.1328125} CONFIG.USER_INTERFACE {AXIS} CONFIG.GT_DRP_CLK {100} CONFIG.TX_FLOW_CONTROL {0} CONFIG.RX_FLOW_CONTROL {0} CONFIG.CMAC_CORE_SELECT {CMACE4_X0Y5} CONFIG.GT_GROUP_SELECT {X0Y28~X0Y31} CONFIG.LANE1_GT_LOC {X0Y28} CONFIG.LANE2_GT_LOC {X0Y29} CONFIG.LANE3_GT_LOC {X0Y30} CONFIG.LANE4_GT_LOC {X0Y31} CONFIG.ADD_GT_CNRL_STS_PORTS {1}  ] [get_ips cmac_usplus_axis_0]
     }
 }
-
-
 
 if {$cfg(fdev) eq "u200"} {
     if {$cfg(en_net_0) eq 1} {
@@ -99,6 +92,96 @@ if {$cfg(fdev) eq "enzian"} {
     }
 }
 
+}
+
+if {$cfg(fpga_arch) eq "versal"} {
+    create_ip -name axis_data_fifo -vendor xilinx.com -library ip -version 2.0 -module_name nia_fifo_cdc_512x1
+    set_property -dict [list \
+        CONFIG.TDATA_NUM_BYTES {64} \
+        CONFIG.TUSER_WIDTH {1} \
+        CONFIG.TID_WIDTH {0} \
+        CONFIG.TDEST_WIDTH {0} \
+        CONFIG.HAS_TKEEP {1} \
+        CONFIG.HAS_TLAST {1} \
+        CONFIG.HAS_TSTRB {0} \
+        CONFIG.FIFO_DEPTH {512} \
+        CONFIG.FIFO_MODE {1} \
+        CONFIG.IS_ACLK_ASYNC {1} \
+        CONFIG.SYNCHRONIZATION_STAGES {3} \
+        CONFIG.FIFO_MEMORY_TYPE {auto} \
+    ] [get_ips nia_fifo_cdc_512x1]
+
+    create_ip -name axis_data_fifo -vendor xilinx.com -library ip -version 2.0 -module_name nia_fifo_pkt_512x1
+    set_property -dict [list \
+        CONFIG.TDATA_NUM_BYTES {64} \
+        CONFIG.TUSER_WIDTH {1} \
+        CONFIG.TID_WIDTH {0} \
+        CONFIG.TDEST_WIDTH {0} \
+        CONFIG.HAS_TKEEP {1} \
+        CONFIG.HAS_TLAST {1} \
+        CONFIG.HAS_TSTRB {0} \
+        CONFIG.FIFO_DEPTH {256} \
+        CONFIG.FIFO_MODE {2} \
+        CONFIG.IS_ACLK_ASYNC {0} \
+        CONFIG.FIFO_MEMORY_TYPE {auto} \
+    ] [get_ips nia_fifo_pkt_512x1]
+
+    if {$cfg(dcmac_phy) eq "dcmac" && $cfg(fdev) ne "vp1552"} {
+        create_ip -name dcmac -vendor xilinx.com -library ip -version 3.1 -module_name dcmac_0
+        set nia_mac_port0_config 100GAUI-1
+        set nia_dcmac_ip_dir dcmac
+        set nia_mac_port1_enable 0
+        if {[info exists env(NIA_DCMAC_ETH_200G)] && $env(NIA_DCMAC_ETH_200G) eq "1"} {
+            set nia_mac_port0_config 200GAUI-2
+            set nia_dcmac_ip_dir dcmac200g
+            set nia_mac_port1_enable 1
+            puts "NIA_ETH_RATE MAC_PORT0_CONFIG_C0=$nia_mac_port0_config ip_dir=$nia_dcmac_ip_dir\
+                  MAC_PORT1_ENABLE_C0=$nia_mac_port1_enable"
+        }
+        set_property -dict [list \
+            CONFIG.MAC_PORT0_CONFIG_C0 $nia_mac_port0_config \
+            CONFIG.MAC_PORT0_ENABLE_AN_LT_C0 {0} \
+            CONFIG.MAC_PORT1_ENABLE_C0 $nia_mac_port1_enable \
+            CONFIG.MAC_PORT1_ENABLE_AN_LT_C0 {0} \
+            CONFIG.MAC_PORT2_ENABLE_C0 {0} \
+            CONFIG.MAC_PORT3_ENABLE_C0 {0} \
+            CONFIG.MAC_PORT4_ENABLE_C0 {0} \
+            CONFIG.MAC_PORT5_ENABLE_C0 {0} \
+            CONFIG.TIMESTAMP_CLK_PERIOD_NS {2.4} \
+        ] [get_ips dcmac_0]
+        foreach nia_ipchk_key {MAC_PORT0_CONFIG_C0 MAC_PORT1_ENABLE_C0 FEC_SLICE0_CFG_C0 \
+                               DATA_RATE_CFG_0} {
+            puts "NIA_ETH_IPCHK dcmac_0 CONFIG.$nia_ipchk_key =\
+                  [get_property CONFIG.$nia_ipchk_key [get_ips dcmac_0]]"
+        }
+
+        import_ip -quiet "$hw_dir/ip/vp1552/$nia_dcmac_ip_dir/dcmac_0_gtwiz_versal_0.xci"
+        import_ip -quiet "$hw_dir/ip/vp1552/$nia_dcmac_ip_dir/dcmac_0_clk_wiz_0.xci"
+
+        source "$hw_dir/hdl/network/dcmac_eth/nia_eth/dcmac_polarity.tcl"
+        nia_dp_pol_enable_ports
+
+        set nia_usr_clk_mhz 250.000
+        if {[info exists env(NIA_DCMAC_USR_MHZ)] && $env(NIA_DCMAC_USR_MHZ) ne ""} {
+            set nia_usr_clk_mhz $env(NIA_DCMAC_USR_MHZ)
+        }
+        puts "NIA_ETH_USRCLK dcmac_usr_clk_wiz clk_out1 = $nia_usr_clk_mhz MHz"
+        create_ip -name clk_wizard -vendor xilinx.com -library ip -version 1.0 -module_name dcmac_usr_clk_wiz
+        set_property -dict [list \
+            CONFIG.CLKOUT_DRIVES {BUFG,BUFG} \
+            CONFIG.CLKOUT_PORT {clk_out1,clk_out2} \
+            CONFIG.CLKOUT_REQUESTED_OUT_FREQUENCY "$nia_usr_clk_mhz,100.000" \
+            CONFIG.CLKOUT_USED {true,true} \
+            CONFIG.PRIM_IN_FREQ {156.250} \
+            CONFIG.PRIM_SOURCE {Global_buffer} \
+            CONFIG.USE_RESET {true} \
+            CONFIG.RESET_TYPE {ACTIVE_HIGH} \
+            CONFIG.RESET_PORT {reset} \
+            CONFIG.USE_LOCKED {true} \
+        ] [get_ips dcmac_usr_clk_wiz]
+    }
+}
+
 ##
 ## Network module
 ##
@@ -119,6 +202,24 @@ create_ip -name ethernet_frame_padding_512 -vendor ethz.systems.fpga -library hl
 ## Fifos
 create_ip -name axis_data_fifo -vendor xilinx.com -library ip -version 2.0 -module_name axis_data_fifo_512_used
 set_property -dict [list CONFIG.TDATA_NUM_BYTES {64} CONFIG.HAS_TKEEP {1} CONFIG.HAS_TLAST {1} CONFIG.HAS_WR_DATA_COUNT {1} CONFIG.Component_Name {axis_data_fifo_512_used}] [get_ips axis_data_fifo_512_used]
+
+if {$cfg(fdev) eq "vp1552"} {
+    create_ip -name axis_dwidth_converter -vendor xilinx.com -library ip -version 1.1 -module_name axis_dwidth_converter_nia_eth_rx_1024_to_512
+    set_property -dict [list CONFIG.S_TDATA_NUM_BYTES {128} CONFIG.M_TDATA_NUM_BYTES {64} CONFIG.HAS_TKEEP {1} CONFIG.HAS_MI_TKEEP {1} CONFIG.HAS_TLAST {1}] [get_ips axis_dwidth_converter_nia_eth_rx_1024_to_512]
+
+    create_ip -name axis_dwidth_converter -vendor xilinx.com -library ip -version 1.1 -module_name axis_dwidth_converter_nia_eth_tx_512_to_1024
+    set_property -dict [list CONFIG.S_TDATA_NUM_BYTES {64} CONFIG.M_TDATA_NUM_BYTES {128} CONFIG.HAS_TKEEP {1} CONFIG.HAS_MI_TKEEP {1} CONFIG.HAS_TLAST {1}] [get_ips axis_dwidth_converter_nia_eth_tx_512_to_1024]
+
+    create_ip -name axis_data_fifo -vendor xilinx.com -library ip -version 2.0 -module_name nia_fifo_cdc_1024x1
+    set_property -dict [list CONFIG.TDATA_NUM_BYTES {128} CONFIG.TUSER_WIDTH {1} CONFIG.TID_WIDTH {0} CONFIG.TDEST_WIDTH {0} CONFIG.HAS_TKEEP {1} CONFIG.HAS_TLAST {1} CONFIG.HAS_TSTRB {0} CONFIG.FIFO_DEPTH {512} CONFIG.FIFO_MODE {1} CONFIG.IS_ACLK_ASYNC {1} CONFIG.SYNCHRONIZATION_STAGES {3} CONFIG.HAS_PROG_FULL {0} CONFIG.HAS_PROG_EMPTY {0} CONFIG.HAS_WR_DATA_COUNT {0} CONFIG.HAS_RD_DATA_COUNT {0} CONFIG.ENABLE_ECC {0}] [get_ips nia_fifo_cdc_1024x1]
+
+    create_ip -name axis_data_fifo -vendor xilinx.com -library ip -version 2.0 -module_name nia_fifo_pkt_1024x1
+    set_property -dict [list CONFIG.TDATA_NUM_BYTES {128} CONFIG.TUSER_WIDTH {1} CONFIG.TID_WIDTH {0} CONFIG.TDEST_WIDTH {0} CONFIG.HAS_TKEEP {1} CONFIG.HAS_TLAST {1} CONFIG.HAS_TSTRB {0} CONFIG.FIFO_DEPTH {256} CONFIG.FIFO_MODE {2} CONFIG.IS_ACLK_ASYNC {0} CONFIG.HAS_PROG_FULL {0} CONFIG.HAS_PROG_EMPTY {0} CONFIG.HAS_WR_DATA_COUNT {0} CONFIG.HAS_RD_DATA_COUNT {0} CONFIG.ENABLE_ECC {0}] [get_ips nia_fifo_pkt_1024x1]
+
+    set ::env(NIA_USR_MHZ) 391
+    source "$cfg(nia_eth_dir)/ip/dcmac_ip_rate.tcl" -notrace
+    dcmac_create_ips_rate 200 "$cfg(nia_eth_dir)/ip" "$cfg(nia_eth_dir)/ip/rate200"
+}
 
 ##
 ## Sniffer
@@ -142,7 +243,6 @@ set_property -dict [list CONFIG.TDATA_NUM_BYTES {64} CONFIG.REG_CONFIG {8} CONFI
 
 create_ip -name axis_clock_converter -vendor xilinx.com -library ip -version 1.1 -module_name axis_clock_converter_host_networking_data_512
 set_property -dict [list CONFIG.TDATA_NUM_BYTES {64} CONFIG.HAS_TKEEP {1} CONFIG.HAS_TLAST {1} CONFIG.SYNCHRONIZATION_STAGES {4}] [get_ips axis_clock_converter_host_networking_data_512]
-
 
 ##
 ## RDMA
@@ -419,9 +519,23 @@ set_property -dict [list CONFIG.S_TDATA_NUM_BYTES {64} CONFIG.M_TDATA_NUM_BYTES 
 create_ip -name axis_dwidth_converter -vendor xilinx.com -library ip -version 1.1 -module_name axis_64_to_512_converter 
 set_property -dict [list CONFIG.S_TDATA_NUM_BYTES {8} CONFIG.M_TDATA_NUM_BYTES {64} CONFIG.HAS_TLAST {1} CONFIG.HAS_TKEEP {1} CONFIG.HAS_MI_TKEEP {1} CONFIG.TDEST_WIDTH {1} ] [get_ips axis_64_to_512_converter]
 
-# AXIS Switch; unfortunately different IPs must be used between Versal and UltraScale+ devices
-# Additionally, the Versal IP must be instantiated in a block diagram
-if {$cfg(fpga_arch) eq "versal"} {
+if {$cfg(fpga_arch) eq "ultrascale_plus"} {
+create_ip -name axis_interconnect -vendor xilinx.com -library ip -version 1.1 -module_name axis_interconnect_512_4to1 
+set_property -dict [list CONFIG.C_NUM_SI_SLOTS {4} CONFIG.SWITCH_TDATA_NUM_BYTES {64} CONFIG.HAS_TSTRB {false} CONFIG.HAS_TID {false} CONFIG.HAS_TDEST {false} CONFIG.SWITCH_PACKET_MODE {true} CONFIG.C_SWITCH_MAX_XFERS_PER_ARB {0} CONFIG.C_M00_AXIS_REG_CONFIG {1} CONFIG.C_S00_AXIS_REG_CONFIG {1} CONFIG.C_S01_AXIS_REG_CONFIG {1} CONFIG.C_S02_AXIS_REG_CONFIG {1} CONFIG.C_S03_AXIS_REG_CONFIG {1} CONFIG.C_SWITCH_NUM_CYCLES_TIMEOUT {0} CONFIG.M00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S01_AXIS_TDATA_NUM_BYTES {64} CONFIG.S02_AXIS_TDATA_NUM_BYTES {64} CONFIG.S03_AXIS_TDATA_NUM_BYTES {64} CONFIG.M00_S01_CONNECTIVITY {true} CONFIG.M00_S02_CONNECTIVITY {true} CONFIG.M00_S03_CONNECTIVITY {true}] [get_ips axis_interconnect_512_4to1]
+
+create_ip -name axis_interconnect -vendor xilinx.com -library ip -version 1.1 -module_name axis_interconnect_512_2to1 
+set_property -dict [list CONFIG.C_NUM_SI_SLOTS {2} CONFIG.SWITCH_TDATA_NUM_BYTES {64} CONFIG.HAS_TSTRB {false} CONFIG.HAS_TID {false} CONFIG.HAS_TDEST {false} CONFIG.SWITCH_PACKET_MODE {true} CONFIG.C_SWITCH_MAX_XFERS_PER_ARB {0} CONFIG.C_M00_AXIS_REG_CONFIG {1} CONFIG.C_S00_AXIS_REG_CONFIG {1} CONFIG.C_S01_AXIS_REG_CONFIG {1} CONFIG.C_SWITCH_NUM_CYCLES_TIMEOUT {0} CONFIG.M00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S01_AXIS_TDATA_NUM_BYTES {64} CONFIG.M00_S01_CONNECTIVITY {true}] [get_ips axis_interconnect_512_2to1]
+}
+
+if {$cfg(fdev) eq "vp1552"} {
+create_ip -name axis_switch -vendor xilinx.com -library ip -version 1.1 -module_name axis_switch_512_4to1
+set_property -dict [list CONFIG.NUM_SI {4} CONFIG.NUM_MI {1} CONFIG.TDATA_NUM_BYTES {64} CONFIG.HAS_TKEEP {1} CONFIG.HAS_TLAST {1} CONFIG.HAS_TSTRB {0} CONFIG.TID_WIDTH {0} CONFIG.TDEST_WIDTH {0} CONFIG.TUSER_WIDTH {0} CONFIG.ROUTING_MODE {0} CONFIG.ARB_ON_TLAST {1} CONFIG.ARB_ON_MAX_XFERS {0}] [get_ips axis_switch_512_4to1]
+
+create_ip -name axis_switch -vendor xilinx.com -library ip -version 1.1 -module_name axis_switch_512_2to1
+set_property -dict [list CONFIG.NUM_SI {2} CONFIG.NUM_MI {1} CONFIG.TDATA_NUM_BYTES {64} CONFIG.HAS_TKEEP {1} CONFIG.HAS_TLAST {1} CONFIG.HAS_TSTRB {0} CONFIG.TID_WIDTH {0} CONFIG.TDEST_WIDTH {0} CONFIG.TUSER_WIDTH {0} CONFIG.ROUTING_MODE {0} CONFIG.ARB_ON_TLAST {1} CONFIG.ARB_ON_MAX_XFERS {0}] [get_ips axis_switch_512_2to1]
+}
+
+if {$cfg(fdev) eq "v80"} {
     proc create_axi_interconnect_512_2to1 {} {
         upvar #0 cfg cnfg
 
@@ -591,13 +705,6 @@ if {$cfg(fpga_arch) eq "versal"} {
 
     create_axi_interconnect_512_2to1
     create_axi_interconnect_512_4to1
-} else {
-
-    create_ip -name axis_interconnect -vendor xilinx.com -library ip -version 1.1 -module_name axis_interconnect_512_4to1 
-    set_property -dict [list CONFIG.C_NUM_SI_SLOTS {4} CONFIG.SWITCH_TDATA_NUM_BYTES {64} CONFIG.HAS_TSTRB {false} CONFIG.HAS_TID {false} CONFIG.HAS_TDEST {false} CONFIG.SWITCH_PACKET_MODE {true} CONFIG.C_SWITCH_MAX_XFERS_PER_ARB {0} CONFIG.C_M00_AXIS_REG_CONFIG {1} CONFIG.C_S00_AXIS_REG_CONFIG {1} CONFIG.C_S01_AXIS_REG_CONFIG {1} CONFIG.C_S02_AXIS_REG_CONFIG {1} CONFIG.C_S03_AXIS_REG_CONFIG {1} CONFIG.C_SWITCH_NUM_CYCLES_TIMEOUT {0} CONFIG.M00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S01_AXIS_TDATA_NUM_BYTES {64} CONFIG.S02_AXIS_TDATA_NUM_BYTES {64} CONFIG.S03_AXIS_TDATA_NUM_BYTES {64} CONFIG.M00_S01_CONNECTIVITY {true} CONFIG.M00_S02_CONNECTIVITY {true} CONFIG.M00_S03_CONNECTIVITY {true}] [get_ips axis_interconnect_512_4to1]
-
-    create_ip -name axis_interconnect -vendor xilinx.com -library ip -version 1.1 -module_name axis_interconnect_512_2to1 
-    set_property -dict [list CONFIG.C_NUM_SI_SLOTS {2} CONFIG.SWITCH_TDATA_NUM_BYTES {64} CONFIG.HAS_TSTRB {false} CONFIG.HAS_TID {false} CONFIG.HAS_TDEST {false} CONFIG.SWITCH_PACKET_MODE {true} CONFIG.C_SWITCH_MAX_XFERS_PER_ARB {0} CONFIG.C_M00_AXIS_REG_CONFIG {1} CONFIG.C_S00_AXIS_REG_CONFIG {1} CONFIG.C_S01_AXIS_REG_CONFIG {1} CONFIG.C_SWITCH_NUM_CYCLES_TIMEOUT {0} CONFIG.M00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S00_AXIS_TDATA_NUM_BYTES {64} CONFIG.S01_AXIS_TDATA_NUM_BYTES {64} CONFIG.M00_S01_CONNECTIVITY {true}] [get_ips axis_interconnect_512_2to1]
 }
 
 ##

@@ -20,6 +20,7 @@
  */
 
 #include "coyote_sysfs.h"
+#include "coyote_setup.h"
 
 ssize_t cyt_attr_ip_show(struct kobject *kobj, struct kobj_attribute *attr, char *buff) {   
     struct bus_driver_data *bus_data = container_of(kobj, struct bus_driver_data, cyt_kobj);
@@ -74,6 +75,29 @@ ssize_t cyt_attr_eost_store(struct kobject *kobj, struct kobj_attribute *attr, c
     sscanf(buff,"%lld",&bus_data->eost);
     dbg_info("coyote-sysfs:  setting EOST to: %lld clock cycles\n", bus_data->eost);
     bus_data->stat_cnfg->reconfig_eost = eost;
+
+    return count;
+}
+
+ssize_t cyt_attr_shell_reset_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buff, size_t count) {
+    struct bus_driver_data *bus_data = container_of(kobj, struct bus_driver_data, cyt_kobj);
+    BUG_ON(!bus_data);
+
+    bool pulse;
+    if (kstrtobool(buff, &pulse) || !pulse) {
+        return -EINVAL;
+    }
+
+    dbg_info("coyote-sysfs:  pulsing the shell reset, device %d\n", bus_data->dev_id);
+    reset_shell(bus_data);
+    if (bus_data->en_net) {
+        write_network_identity(bus_data);
+    }
+    if (bus_data->en_wb) {
+        for (int i = 0; i < bus_data->n_fpga_reg; i++) {
+            write_writeback_addresses(&bus_data->vfpga_dev[i]);
+        }
+    }
 
     return count;
 }

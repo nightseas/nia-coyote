@@ -524,7 +524,6 @@ module design_dynamic_top #(
         .m_axis_rdma_rd_rsp_n(m_axis_rdma_rsp),
         .s_axis_rdma_wr_n(s_axis_rdma),
 
-
         .s_rdma_qp_interface_u(rdma_qp_interface_s0),
         .s_rdma_conn_interface_u(rdma_conn_interface_s0),
 
@@ -817,10 +816,10 @@ module design_dynamic_top #(
 {% else %}
     // No crossing
     for(genvar i = 0; i < N_REGIONS; i++) begin
-        `META_ASSIGN(tcp_0_rq_s1[i], tcp_0_rq_s2[i])
-        `META_ASSIGN(tcp_0_sq_s2[i], tcp_0_sq_s1[i])
-        `AXISR_ASSIGN(axis_tcp_0_in_s1[i], axis_tcp_0_in_s2[i])
-        `AXISR_ASSIGN(axis_tcp_0_out_s2[i], axis_tcp_0_out_s1[i])
+        `META_ASSIGN(tcp_rq_s1[i], tcp_rq_s2[i])
+        `META_ASSIGN(tcp_sq_s2[i], tcp_sq_s1[i])
+        `AXISR_ASSIGN(axis_tcp_in_s1[i], axis_tcp_in_s2[i])
+        `AXISR_ASSIGN(axis_tcp_out_s2[i], axis_tcp_out_s1[i])
     end
 
 {% endif %}	
@@ -1030,7 +1029,6 @@ module design_dynamic_top #(
     metaIntf #(.STYPE(ack_t)) bpss_wr_cq [N_REGIONS] ();
     metaIntf #(.STYPE(ack_t)) bpss_rd_cq_s0 [N_REGIONS] ();
     metaIntf #(.STYPE(ack_t)) bpss_wr_cq_s0 [N_REGIONS] ();
-
 
 {% if cnfg.en_uclk %}
     for(genvar i = 0; i < N_REGIONS; i++) begin

@@ -146,6 +146,21 @@ foreach src_dir $src_dirs {
     }
 }
 
+foreach sim_ip [get_ips -quiet] {
+    if {[get_property -quiet IS_NESTED $sim_ip] eq 1} { continue }
+    if {[catch {generate_target simulation $sim_ip} pregen_err]} {
+        puts "**** WARNING: sim target pre-gen skipped for IP $sim_ip: $pregen_err"
+    }
+}
+foreach sim_bd [get_files -quiet -filter {FILE_TYPE == "Block Designs"}] {
+    if {[catch {generate_target simulation $sim_bd} pregen_err]} {
+        puts "**** WARNING: sim target pre-gen skipped for BD $sim_bd: $pregen_err"
+    }
+}
+
+puts "**** Sim IP/BD simulation targets generated"
+puts "****"
+
 close_project
 
 ########################################################################################################

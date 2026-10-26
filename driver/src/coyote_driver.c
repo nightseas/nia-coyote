@@ -51,6 +51,10 @@ bool en_hmm = false;
 module_param(en_hmm, bool, 0000);
 MODULE_PARM_DESC(en_hmm, "Enable HMM");
 
+bool skip_shell_reset = false;
+module_param(skip_shell_reset, bool, 0000);
+MODULE_PARM_DESC(skip_shell_reset, "Skip the shell reset pulse on reconfig_eost_reset in the probe");
+
 // Include the DMA Buffer mechanism to enable peer-to-peer DMA transfers between FPGAs and GPUs
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
 MODULE_IMPORT_NS("DMA_BUF");

@@ -158,7 +158,7 @@ always_comb begin
     req_src = req_snk[vfid];
 end
 
-assign user_seq_in.valid = valid_src & ready_src;
+assign user_seq_in.valid = valid_src & ready_src & ~is_read;
 assign user_seq_in.data = {vfid, req_snk[vfid].req_1.len};
 
 // Multiplexer sequence
